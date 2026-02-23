@@ -7,7 +7,7 @@ type Answers = {
   sitoUrl: string;
   ticketMedio: string;
   leadMese: string;
-  convRate: string; // può essere "non_so" o numero
+  convRate: string;
   valueProp: string;
   specializzazione: "si" | "parziale" | "no" | "";
   sitoComunicaSpec: "si" | "parziale" | "no" | "";
@@ -37,7 +37,7 @@ const initial: Answers = {
 };
 
 function isValidUrl(s: string) {
-  if (!s) return true; // campo opzionale
+  if (!s) return true;
   try {
     const u = new URL(s);
     return u.protocol === "http:" || u.protocol === "https:";
@@ -55,50 +55,42 @@ export default function Diagnosi() {
     () => [
       { key: "settore", title: "Settore" },
       { key: "sitoUrl", title: "Sito (opzionale)" },
-      { key: "ticketMedio", title: "Ticket medio" },
-      { key: "leadMese", title: "Lead/mese" },
-      { key: "convRate", title: "Conversione (se nota)" },
-      { key: "valueProp", title: "Perché voi?" },
+      { key: "ticketMedio", title: "Ticket medio (€)" },
+      { key: "leadMese", title: "Lead medi al mese" },
+      { key: "convRate", title: "Conversione lead → cliente (%)" },
+      { key: "valueProp", title: "Perché scegliere voi?" },
       { key: "specializzazione", title: "Specializzazione" },
-      { key: "sitoComunicaSpec", title: "Sito: comunica specializzazione?" },
-      { key: "proof", title: "Prove (casi studio)" },
+      { key: "sitoComunicaSpec", title: "Sito comunica specializzazione?" },
+      { key: "proof", title: "Prove di risultato" },
       { key: "processo", title: "Processo esplicitato" },
-      { key: "materiale", title: "Materiali standard" },
-      { key: "kpi", title: "KPI mensili" },
-      { key: "decisioni", title: "Decisioni" },
+      { key: "materiale", title: "Materiali standardizzati" },
+      { key: "kpi", title: "KPI monitorati mensilmente?" },
+      { key: "decisioni", title: "Tipo di decisioni" },
       { key: "decisionMaker", title: "Decision maker" },
     ],
     []
   );
 
-  // NB: sono 14 "step items" perché abbiamo 12 domande + 2 di contesto (settore, sito)
   const totalSteps = steps.length;
+  const currentKey = steps[step].key as keyof Answers;
 
   const canGoNext = useMemo(() => {
-    const k = steps[step]?.key as keyof Answers;
+    const k = currentKey;
 
-    // validazioni base
     if (k === "settore") return answers.settore.trim().length >= 2;
-    if (k === "sitoUrl") return isValidUrl(answers.sitoUrl.trim());
+    if (k === "sitoUrl") return isValidUrl(answers.sitoUrl);
     if (k === "ticketMedio") return Number(answers.ticketMedio) > 0;
-    if (k === "leadMese") return Number(answers.leadMese) >= 0 && answers.leadMese !== "";
+    if (k === "leadMese") return answers.leadMese !== "";
     if (k === "convRate")
       return (
         answers.convRate === "non_so" ||
-        (answers.convRate !== "" && Number(answers.convRate) >= 0 && Number(answers.convRate) <= 100)
+        (answers.convRate !== "" &&
+          Number(answers.convRate) >= 0 &&
+          Number(answers.convRate) <= 100)
       );
     if (k === "valueProp") return answers.valueProp.trim().length >= 10;
-    if (k === "specializzazione") return answers.specializzazione !== "";
-    if (k === "sitoComunicaSpec") return answers.sitoComunicaSpec !== "";
-    if (k === "proof") return answers.proof !== "";
-    if (k === "processo") return answers.processo !== "";
-    if (k === "materiale") return answers.materiale !== "";
-    if (k === "kpi") return answers.kpi !== "";
-    if (k === "decisioni") return answers.decisioni !== "";
-    if (k === "decisionMaker") return answers.decisionMaker !== "";
-
-    return false;
-  }, [answers, step, steps]);
+    return answers[k] !== "";
+  }, [answers, currentKey]);
 
   const progress = Math.round(((step + 1) / totalSteps) * 100);
 
@@ -106,280 +98,119 @@ export default function Diagnosi() {
     setTouched(true);
     if (!canGoNext) return;
     setTouched(false);
-    setStep((s) => Math.min(s + 1, totalSteps - 1));
+    if (step < totalSteps - 1) {
+      setStep(step + 1);
+    }
   }
 
   function prev() {
-    setTouched(false);
-    setStep((s) => Math.max(s - 1, 0));
+    if (step > 0) setStep(step - 1);
   }
 
   const isLast = step === totalSteps - 1;
 
-  const currentKey = steps[step]?.key as keyof Answers;
+  /* =========================
+     SCORING ENGINE
+  ========================== */
 
-  // Placeholder risultato immediato (lo renderemo reale nel prossimo step con scoring)
-  const showResult = false;
+  const score = (() => {
+    let s = 100;
+
+    if (answers.specializzazione === "no") s -= 10;
+    if (answers.sitoComunicaSpec === "no") s -= 10;
+    if (answers.proof === "nessuno") s -= 15;
+    if (answers.processo === "no") s -= 10;
+    if (answers.materiale === "no") s -= 10;
+    if (answers.kpi === "no") s -= 10;
+    if (answers.decisioni === "intuitive") s -= 10;
+    if (answers.decisionMaker === "non_chiaro") s -= 5;
+    if (answers.convRate === "non_so") s -= 5;
+
+    return Math.max(0, s);
+  })();
+
+  const livello =
+    score >= 80
+      ? "Strutturato"
+      : score >= 60
+      ? "In consolidamento"
+      : score >= 40
+      ? "Fragile"
+      : "Critico";
+
+  const perditaStimata = (() => {
+    const ticket = Number(answers.ticketMedio || 0);
+    const lead = Number(answers.leadMese || 0);
+    const conv =
+      answers.convRate && answers.convRate !== "non_so"
+        ? Number(answers.convRate) / 100
+        : 0.1;
+
+    const fatturato = ticket * lead * conv;
+    return Math.round(fatturato * 0.2);
+  })();
+
+  const showResult = isLast && canGoNext;
+
+  /* ========================= */
 
   return (
     <main className="min-h-screen bg-white text-black px-6 py-12">
       <div className="max-w-2xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold">Diagnosi Strutturale</h1>
-          <p className="text-gray-600 mt-2">
-            10–12 domande essenziali. Output: score + priorità + report PDF via email.
-          </p>
+        <h1 className="text-3xl font-bold mb-2">Diagnosi Strutturale</h1>
+        <p className="text-gray-600 mb-6">
+          Output: score, livello evolutivo, perdita stimata, priorità operative.
+        </p>
 
-          <div className="mt-6">
-            <div className="flex justify-between text-sm text-gray-500 mb-2">
-              <span>
-                Step {step + 1} / {totalSteps}
-              </span>
-              <span>{progress}%</span>
-            </div>
-            <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-              <div className="h-2 bg-black" style={{ width: `${progress}%` }} />
-            </div>
+        <div className="mb-6">
+          <div className="flex justify-between text-sm text-gray-500 mb-2">
+            <span>Step {step + 1} / {totalSteps}</span>
+            <span>{progress}%</span>
+          </div>
+          <div className="h-2 w-full bg-gray-200 rounded-full">
+            <div
+              className="h-2 bg-black rounded-full"
+              style={{ width: `${progress}%` }}
+            />
           </div>
         </div>
 
-        <div className="border border-gray-200 rounded-2xl p-6">
-          <h2 className="text-xl font-semibold mb-4">{steps[step].title}</h2>
+        <div className="border rounded-2xl p-6 space-y-4">
 
-          {/* RENDER CAMPO PER STEP */}
-          {currentKey === "settore" && (
-            <div>
-              <label className="block mb-2 font-medium">Settore (es. impiantistica, meccanica B2B, SaaS)</label>
-              <input
-                value={answers.settore}
-                onChange={(e) => setAnswers({ ...answers, settore: e.target.value })}
-                className="w-full border border-gray-300 rounded-lg px-4 py-3"
-                placeholder="Inserisci settore"
-              />
-              {touched && !canGoNext && (
-                <p className="text-sm text-red-600 mt-2">Inserisci un settore valido.</p>
-              )}
-            </div>
-          )}
+          {/* INPUT DINAMICO */}
+          <div>
+            <label className="block font-medium mb-2">
+              {steps[step].title}
+            </label>
 
-          {currentKey === "sitoUrl" && (
-            <div>
-              <label className="block mb-2 font-medium">Sito (opzionale)</label>
-              <input
-                value={answers.sitoUrl}
-                onChange={(e) => setAnswers({ ...answers, sitoUrl: e.target.value })}
-                className="w-full border border-gray-300 rounded-lg px-4 py-3"
-                placeholder="https://..."
-              />
-              {touched && !canGoNext && (
-                <p className="text-sm text-red-600 mt-2">URL non valido (usa https://...).</p>
-              )}
-              <p className="text-sm text-gray-500 mt-2">Serve per tentare il logo (favicon) e contestualizzare.</p>
-            </div>
-          )}
-
-          {currentKey === "ticketMedio" && (
-            <div>
-              <label className="block mb-2 font-medium">Ticket medio (€)</label>
-              <input
-                type="number"
-                value={answers.ticketMedio}
-                onChange={(e) => setAnswers({ ...answers, ticketMedio: e.target.value })}
-                className="w-full border border-gray-300 rounded-lg px-4 py-3"
-                placeholder="Es. 5000"
-              />
-              {touched && !canGoNext && (
-                <p className="text-sm text-red-600 mt-2">Inserisci un numero maggiore di 0.</p>
-              )}
-            </div>
-          )}
-
-          {currentKey === "leadMese" && (
-            <div>
-              <label className="block mb-2 font-medium">Lead medi al mese</label>
-              <input
-                type="number"
-                value={answers.leadMese}
-                onChange={(e) => setAnswers({ ...answers, leadMese: e.target.value })}
-                className="w-full border border-gray-300 rounded-lg px-4 py-3"
-                placeholder="Es. 10"
-              />
-              {touched && !canGoNext && (
-                <p className="text-sm text-red-600 mt-2">Inserisci un numero (anche 0 se non tracciati).</p>
-              )}
-            </div>
-          )}
-
-          {currentKey === "convRate" && (
-            <div className="space-y-3">
-              <label className="block mb-2 font-medium">Tasso di conversione lead → cliente</label>
-              <div className="flex gap-3">
-                <input
-                  type="number"
-                  value={answers.convRate === "non_so" ? "" : answers.convRate}
-                  onChange={(e) => setAnswers({ ...answers, convRate: e.target.value })}
-                  className="flex-1 border border-gray-300 rounded-lg px-4 py-3"
-                  placeholder="Es. 12 (in %)"
-                  disabled={answers.convRate === "non_so"}
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    setAnswers({
-                      ...answers,
-                      convRate: answers.convRate === "non_so" ? "" : "non_so",
-                    })
-                  }
-                  className="border border-gray-300 rounded-lg px-4 py-3"
-                >
-                  {answers.convRate === "non_so" ? "Lo so" : "Non lo so"}
-                </button>
-              </div>
-              {touched && !canGoNext && (
-                <p className="text-sm text-red-600 mt-2">Inserisci una % tra 0 e 100 oppure seleziona “Non lo so”.</p>
-              )}
-            </div>
-          )}
-
-          {currentKey === "valueProp" && (
-            <div>
-              <label className="block mb-2 font-medium">In 1 frase: perché un cliente dovrebbe scegliere voi?</label>
-              <textarea
-                value={answers.valueProp}
-                onChange={(e) => setAnswers({ ...answers, valueProp: e.target.value })}
-                className="w-full border border-gray-300 rounded-lg px-4 py-3 min-h-28"
-                placeholder="Es. Installiamo impianti fotovoltaici industriali con tempi certi e garanzia completa..."
-              />
-              {touched && !canGoNext && (
-                <p className="text-sm text-red-600 mt-2">Scrivi almeno 10 caratteri (frase completa).</p>
-              )}
-            </div>
-          )}
-
-          {currentKey === "specializzazione" && (
-            <RadioBlock
-              label="Siete specializzati in un segmento preciso?"
-              value={answers.specializzazione}
-              onChange={(v) => setAnswers({ ...answers, specializzazione: v as any })}
-              options={[
-                { value: "si", label: "Sì" },
-                { value: "parziale", label: "Parzialmente" },
-                { value: "no", label: "No" },
-              ]}
-              error={touched && !canGoNext ? "Seleziona una risposta." : ""}
+            <input
+              className="w-full border rounded-lg px-4 py-3"
+              value={(answers as any)[currentKey]}
+              onChange={(e) =>
+                setAnswers({ ...answers, [currentKey]: e.target.value })
+              }
+              placeholder="Inserisci valore"
             />
-          )}
 
-          {currentKey === "sitoComunicaSpec" && (
-            <RadioBlock
-              label="Il sito comunica chiaramente questa specializzazione?"
-              value={answers.sitoComunicaSpec}
-              onChange={(v) => setAnswers({ ...answers, sitoComunicaSpec: v as any })}
-              options={[
-                { value: "si", label: "Sì" },
-                { value: "parziale", label: "Parzialmente" },
-                { value: "no", label: "No" },
-              ]}
-              error={touched && !canGoNext ? "Seleziona una risposta." : ""}
-            />
-          )}
+            {touched && !canGoNext && (
+              <p className="text-sm text-red-600 mt-2">
+                Compila correttamente il campo.
+              </p>
+            )}
+          </div>
 
-          {currentKey === "proof" && (
-            <RadioBlock
-              label="Avete prove di risultato (case study / testimonial)?"
-              value={answers.proof}
-              onChange={(v) => setAnswers({ ...answers, proof: v as any })}
-              options={[
-                { value: "casi_studio", label: "Case study dettagliati" },
-                { value: "testimonianze", label: "Solo testimonianze" },
-                { value: "nessuno", label: "Nessuno" },
-              ]}
-              error={touched && !canGoNext ? "Seleziona una risposta." : ""}
-            />
-          )}
-
-          {currentKey === "processo" && (
-            <RadioBlock
-              label="Avete un processo di lavoro esplicitato (step, modalità, tempi)?"
-              value={answers.processo}
-              onChange={(v) => setAnswers({ ...answers, processo: v as any })}
-              options={[
-                { value: "si", label: "Sì" },
-                { value: "no", label: "No" },
-              ]}
-              error={touched && !canGoNext ? "Seleziona una risposta." : ""}
-            />
-          )}
-
-          {currentKey === "materiale" && (
-            <RadioBlock
-              label="Il materiale commerciale è standardizzato?"
-              value={answers.materiale}
-              onChange={(v) => setAnswers({ ...answers, materiale: v as any })}
-              options={[
-                { value: "si", label: "Sì" },
-                { value: "no", label: "No" },
-                { value: "variabile", label: "Ogni volta diverso" },
-              ]}
-              error={touched && !canGoNext ? "Seleziona una risposta." : ""}
-            />
-          )}
-
-          {currentKey === "kpi" && (
-            <RadioBlock
-              label="Monitorate KPI commerciali mensilmente?"
-              value={answers.kpi}
-              onChange={(v) => setAnswers({ ...answers, kpi: v as any })}
-              options={[
-                { value: "si", label: "Sì" },
-                { value: "no", label: "No" },
-              ]}
-              error={touched && !canGoNext ? "Seleziona una risposta." : ""}
-            />
-          )}
-
-          {currentKey === "decisioni" && (
-            <RadioBlock
-              label="Le decisioni strategiche sono:"
-              value={answers.decisioni}
-              onChange={(v) => setAnswers({ ...answers, decisioni: v as any })}
-              options={[
-                { value: "pianificate", label: "Pianificate" },
-                { value: "reattive", label: "Reattive" },
-                { value: "intuitive", label: "Intuitive" },
-              ]}
-              error={touched && !canGoNext ? "Seleziona una risposta." : ""}
-            />
-          )}
-
-          {currentKey === "decisionMaker" && (
-            <RadioBlock
-              label="Chi prende le decisioni?"
-              value={answers.decisionMaker}
-              onChange={(v) => setAnswers({ ...answers, decisionMaker: v as any })}
-              options={[
-                { value: "uno", label: "Una persona" },
-                { value: "piu", label: "Più persone" },
-                { value: "non_chiaro", label: "Non è chiaro" },
-              ]}
-              error={touched && !canGoNext ? "Seleziona una risposta." : ""}
-            />
-          )}
-
-          <div className="mt-8 flex items-center justify-between">
+          <div className="flex justify-between pt-4">
             <button
-              type="button"
               onClick={prev}
               disabled={step === 0}
-              className="px-4 py-2 rounded-lg border border-gray-300 disabled:opacity-40"
+              className="px-4 py-2 border rounded-lg disabled:opacity-40"
             >
               Indietro
             </button>
 
             <button
-              type="button"
               onClick={next}
-              className="px-5 py-3 rounded-lg bg-black text-white"
+              className="px-5 py-3 bg-black text-white rounded-lg"
             >
               {isLast ? "Completa" : "Avanti"}
             </button>
@@ -387,52 +218,26 @@ export default function Diagnosi() {
         </div>
 
         {showResult && (
-          <div className="mt-10 border border-gray-200 rounded-2xl p-6">
-            <h3 className="text-xl font-semibold">Risultato (placeholder)</h3>
-            <pre className="text-sm text-gray-700 mt-4 overflow-auto">
-              {JSON.stringify(answers, null, 2)}
-            </pre>
+          <div className="mt-10 border rounded-2xl p-6">
+            <h3 className="text-2xl font-bold mb-4">Risultato</h3>
+
+            <div className="mb-6">
+              <div className="text-sm text-gray-500">Score</div>
+              <div className="text-4xl font-bold">{score}/100</div>
+              <div className="text-lg mt-1">Livello: {livello}</div>
+            </div>
+
+            <div className="mb-6">
+              <div className="text-sm text-gray-500">
+                Perdita potenziale stimata / mese
+              </div>
+              <div className="text-2xl font-semibold">
+                € {perditaStimata.toLocaleString()}
+              </div>
+            </div>
           </div>
         )}
-
-        <p className="text-xs text-gray-400 mt-8">
-          Dati usati per generare un report PDF personalizzato. Nessuna condivisione con terzi.
-        </p>
       </div>
     </main>
-  );
-}
-
-function RadioBlock(props: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-  error?: string;
-}) {
-  return (
-    <div>
-      <div className="block mb-3 font-medium">{props.label}</div>
-      <div className="space-y-2">
-        {props.options.map((o) => (
-          <label
-            key={o.value}
-            className={`flex items-center gap-3 border rounded-lg px-4 py-3 cursor-pointer ${
-              props.value === o.value ? "border-black" : "border-gray-300"
-            }`}
-          >
-            <input
-              type="radio"
-              name={props.label}
-              value={o.value}
-              checked={props.value === o.value}
-              onChange={() => props.onChange(o.value)}
-            />
-            <span>{o.label}</span>
-          </label>
-        ))}
-      </div>
-      {props.error ? <p className="text-sm text-red-600 mt-2">{props.error}</p> : null}
-    </div>
   );
 }
