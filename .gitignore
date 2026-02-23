@@ -1,0 +1,19 @@
+# deps
+node_modules
+**/node_modules
+
+# next
+.next
+**/.next
+out
+
+# build
+dist
+**/dist
+
+# logs
+*.log
+
+# env
+.env
+.env.*
