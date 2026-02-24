@@ -27,7 +27,7 @@ app.use(
       if (isAllowedOrigin(origin || undefined)) return cb(null, true);
       return cb(new Error("CORS blocked"), false);
     },
-    methods: ["GET", "POST", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "OPTIONS", "DELETE"],
     allowedHeaders: ["Content-Type", "x-admin-key"],
   })
 );
@@ -54,7 +54,6 @@ const pool = new Pool({
 });
 
 async function ensureDb() {
-  // Tabella + colonna raw_answers (JSONB)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS leads (
       id SERIAL PRIMARY KEY,
@@ -70,7 +69,6 @@ async function ensureDb() {
     );
   `);
 
-  // Se la tabella esisteva già senza raw_answers, la aggiungiamo
   await pool.query(`
     ALTER TABLE leads
     ADD COLUMN IF NOT EXISTS raw_answers JSONB;
@@ -131,7 +129,6 @@ function scoreAndPriorities(input: z.infer<typeof DiagnosticSchema>) {
       ? "Fragile"
       : "Critico";
 
-  // Per ora: raccolta (niente stima economica)
   const perdita_mensile = 0;
 
   return { score, livello, perdita_mensile };
@@ -153,15 +150,27 @@ app.get("/health", (_req, res) => {
  * DIAGNOSTIC
  * ✅ salva lead + raw answers
  * ✅ NO PDF / NO EMAIL
- * ✅ il frontend non deve usare score/livello
  */
 app.post("/diagnostic", async (req, res) => {
   try {
-    const input = DiagnosticSchema.parse(req.body);
+    // 🔎 DEBUG: cosa arriva davvero dal form?
+    const body = req.body ?? {};
+    const bodyKeys = Object.keys(body);
+    const rawKeys =
+      body && typeof body === "object" && body.rawAnswers && typeof body.rawAnswers === "object"
+        ? Object.keys(body.rawAnswers)
+        : [];
 
-    const request_id = `req_${Date.now()}_${Math.random()
-      .toString(16)
-      .slice(2)}`;
+    console.log("[bos-api] /diagnostic received keys:", bodyKeys);
+    console.log("[bos-api] /diagnostic rawAnswers keys:", rawKeys);
+
+    const input = DiagnosticSchema.parse(body);
+
+    // 🔎 DEBUG: cosa passa davvero Zod?
+    const parsedRawKeys = input.rawAnswers ? Object.keys(input.rawAnswers) : [];
+    console.log("[bos-api] /diagnostic parsed rawAnswers keys:", parsedRawKeys);
+
+    const request_id = `req_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
     const { score, livello, perdita_mensile } = scoreAndPriorities(input);
 
@@ -184,7 +193,6 @@ app.post("/diagnostic", async (req, res) => {
       ]
     );
 
-    // risposta “neutra”: non restituiamo score/livello se non ti serve
     return res.json({
       ok: true,
       requestId: request_id,
@@ -267,31 +275,19 @@ app.get("/admin/leads.csv", async (req, res) => {
 });
 
 /**
- * ADMIN: DELETE lead by id
+ * DELETE lead
  */
 app.delete("/admin/leads/:id", async (req, res) => {
-  try {
-    const forbidden = requireAdmin(req, res);
-    if (forbidden) return;
+  const forbidden = requireAdmin(req, res);
+  if (forbidden) return;
 
-    const id = Number(req.params.id);
-    if (!Number.isFinite(id) || id <= 0) {
-      return res.status(400).json({ ok: false, error: "Invalid id" });
-    }
-
-    const result = await pool.query("DELETE FROM leads WHERE id = $1 RETURNING id", [
-      id,
-    ]);
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ ok: false, error: "Not found" });
-    }
-
-    return res.json({ ok: true, deletedId: id });
-  } catch (err: any) {
-    console.error("[bos-api] delete lead failed", err?.message || err);
-    return res.status(500).json({ ok: false, error: "Server error" });
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ ok: false, error: "Invalid id" });
   }
+
+  await pool.query(`DELETE FROM leads WHERE id = $1`, [id]);
+  return res.json({ ok: true });
 });
 
 ensureDb()
