@@ -7,7 +7,8 @@ const app = express();
 
 /**
  * CORS: consenti SOLO i domini del frontend
- * - imposta CORS_ORIGINS su Render: es. "https://bos-delta.vercel.app,https://bos-delta-xxx.vercel.app"
+ * Imposta su Render:
+ * CORS_ORIGINS="https://bos-delta.vercel.app,https://bos-delta-xxx.vercel.app"
  */
 const CORS_ORIGINS = (process.env.CORS_ORIGINS || "")
   .split(",")
@@ -96,7 +97,7 @@ function scoreAndPriorities(input: z.infer<typeof DiagnosticSchema>) {
 
   let score = 100;
 
-  // NOTE: manteniamo la tua logica esistente (aggiornala quando vuoi)
+  // Logica semplice (MVP) — puoi raffinarla dopo
   if (a.riconoscibilita === "bassa") score -= 15;
   if (a.logo === "grafico") score -= 10;
   if (a.sistema_visivo === "no") score -= 15;
@@ -122,17 +123,22 @@ function scoreAndPriorities(input: z.infer<typeof DiagnosticSchema>) {
       ? "Fragile"
       : "Critico";
 
-  // Perdita mensile (MVP): se non vuoi mostrarla ora, la lasciamo 0
+  // Per ora: nessuna stima economica (solo raccolta lead)
   const perdita_mensile = 0;
 
   return { score, livello, perdita_mensile };
 }
 
 /**
- * HEALTH
+ * HEALTH (con versione deploy)
  */
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "bos-api", ts: new Date().toISOString() });
+  res.json({
+    ok: true,
+    service: "bos-api",
+    ts: new Date().toISOString(),
+    version: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || "unknown",
+  });
 });
 
 /**
@@ -149,7 +155,6 @@ app.post("/diagnostic", async (req, res) => {
 
     const { score, livello, perdita_mensile } = scoreAndPriorities(input);
 
-    // salva su DB
     await pool.query(
       `
       INSERT INTO leads (request_id, email, settore, sito_url, score, livello, perdita_mensile)
@@ -166,7 +171,6 @@ app.post("/diagnostic", async (req, res) => {
       ]
     );
 
-    // Risposta immediata
     return res.json({
       ok: true,
       requestId: request_id,
@@ -234,16 +238,11 @@ app.get("/admin/leads.csv", async (req, res) => {
   };
 
   const lines = [header.join(",")].concat(
-    rows.map((r: any) =>
-      header.map((k) => escapeCsv(r[k])).join(",")
-    )
+    rows.map((r: any) => header.map((k) => escapeCsv(r[k])).join(","))
   );
 
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader(
-    "Content-Disposition",
-    'attachment; filename="bos-leads.csv"'
-  );
+  res.setHeader("Content-Disposition", 'attachment; filename="bos-leads.csv"');
   res.send(lines.join("\n"));
 });
 
