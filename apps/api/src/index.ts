@@ -30,7 +30,7 @@ app.use(
   cors({
     origin: allowedOrigins,
     methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type"],
+    allowedHeaders: ["Content-Type", "x-admin-key"],
   })
 );
 
@@ -45,6 +45,9 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 const RESEND_FROM = process.env.RESEND_FROM || "";
 const SEND_DELAY_MS = Number(process.env.SEND_DELAY_MS || 180000);
 
+// Admin protection
+const ADMIN_API_KEY = process.env.ADMIN_API_KEY || "";
+
 // ===== POSTGRES =====
 if (!DATABASE_URL) {
   console.error("DATABASE_URL missing");
@@ -55,7 +58,6 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-// Create table if not exists
 async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS leads (
@@ -124,11 +126,8 @@ function scoreAndPriorities(input: z.infer<typeof DiagnosticSchema>) {
       : "Critico";
 
   const conv = input.convRate === null ? 10 : input.convRate;
-  const fatturatoMensile =
-    input.ticketMedio * input.leadMese * (conv / 100);
-  const perditaStimataMensileEuro = Math.round(
-    fatturatoMensile * 0.2
-  );
+  const fatturatoMensile = input.ticketMedio * input.leadMese * (conv / 100);
+  const perditaStimataMensileEuro = Math.round(fatturatoMensile * 0.2);
 
   return { score, livello, perditaStimataMensileEuro };
 }
@@ -154,11 +153,7 @@ async function htmlToPdfBuffer(html: string) {
   }
 }
 
-async function sendPdfEmail(
-  to: string,
-  pdf: Buffer,
-  requestId: string
-) {
+async function sendPdfEmail(to: string, pdf: Buffer, requestId: string) {
   if (!resend) throw new Error("RESEND_API_KEY missing");
   if (!RESEND_FROM) throw new Error("RESEND_FROM missing");
 
@@ -189,8 +184,9 @@ app.post("/diagnostic", async (req, res) => {
 
   const requestId = `req_${Date.now()}`;
 
-  const { score, livello, perditaStimataMensileEuro } =
-    scoreAndPriorities(parsed.data);
+  const { score, livello, perditaStimataMensileEuro } = scoreAndPriorities(
+    parsed.data
+  );
 
   // Save to DB immediately
   await pool.query(
@@ -224,7 +220,7 @@ app.post("/diagnostic", async (req, res) => {
         perditaStimataMensileEuro,
         priorita: [],
         createdAtISO: new Date().toISOString(),
-      });
+      } satisfies PdfData);
 
       const pdf = await htmlToPdfBuffer(html);
       await sendPdfEmail(parsed.data.email, pdf, requestId);
@@ -236,8 +232,17 @@ app.post("/diagnostic", async (req, res) => {
   }, SEND_DELAY_MS);
 });
 
-// ===== ADMIN ROUTE =====
-app.get("/admin/leads", async (_req, res) => {
+// ===== ADMIN ROUTE (protected) =====
+app.get("/admin/leads", async (req, res) => {
+  if (!ADMIN_API_KEY) {
+    return res.status(500).json({ ok: false, error: "ADMIN_API_KEY missing" });
+  }
+
+  const key = (req.header("x-admin-key") || "").trim();
+  if (!key || key !== ADMIN_API_KEY) {
+    return res.status(403).json({ ok: false, error: "Forbidden" });
+  }
+
   const { rows } = await pool.query(
     `SELECT * FROM leads ORDER BY created_at DESC LIMIT 50`
   );
@@ -247,4 +252,3 @@ app.get("/admin/leads", async (_req, res) => {
 app.listen(PORT, () => {
   console.log(`[bos-api] listening on :${PORT}`);
 });
-
