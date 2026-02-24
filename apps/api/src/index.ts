@@ -9,20 +9,27 @@ const app = express();
 
 const allowedOrigins = [
   "https://bos-delta.vercel.app",
-  "https://www.bos-delta.vercel.app"
+  "https://www.bos-delta.vercel.app",
 ];
 
+app.use((req, res, next) => {
+  const origin = req.headers.origin as string | undefined;
+
+  // Allow requests without Origin (curl/server-to-server)
+  if (!origin) return next();
+
+  // Block non-allowed origins with a clean 403
+  if (!allowedOrigins.includes(origin)) {
+    return res.status(403).json({ ok: false, error: "CORS forbidden" });
+  }
+
+  return next();
+});
+
+// Apply CORS only after our explicit allow/block
 app.use(
   cors({
-    origin: function (origin, callback) {
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(new Error("CORS not allowed"), false);
-    }
+    origin: allowedOrigins,
   })
 );
 
@@ -77,24 +84,15 @@ function scoreAndPriorities(input: z.infer<typeof DiagnosticSchema>) {
       : "Critico";
 
   const priorita: string[] = [];
-
-  if (a.proof === "nessuno")
-    priorita.push("Costruire case study documentati.");
-  if (a.processo === "no")
-    priorita.push("Formalizzare processo operativo con step chiari.");
-  if (a.kpi === "no")
-    priorita.push("Implementare KPI mensili (lead, conversione, ticket).");
-  if (a.specializzazione === "no")
-    priorita.push("Definire segmento prioritario e proposta di valore.");
+  if (a.proof === "nessuno") priorita.push("Costruire case study documentati.");
+  if (a.processo === "no") priorita.push("Formalizzare processo operativo con step chiari.");
+  if (a.kpi === "no") priorita.push("Implementare KPI mensili (lead, conversione, ticket).");
+  if (a.specializzazione === "no") priorita.push("Definire segmento prioritario e proposta di valore.");
 
   const conv = input.convRate === null ? 10 : input.convRate;
 
-  const fatturatoMensile =
-    input.ticketMedio * input.leadMese * (conv / 100);
-
-  const perditaStimataMensileEuro = Math.round(
-    fatturatoMensile * 0.2
-  );
+  const fatturatoMensile = input.ticketMedio * input.leadMese * (conv / 100);
+  const perditaStimataMensileEuro = Math.round(fatturatoMensile * 0.2);
 
   return { score, livello, priorita, perditaStimataMensileEuro };
 }
@@ -111,12 +109,7 @@ async function htmlToPdfBuffer(html: string) {
     const pdf = await page.pdf({
       format: "A4",
       printBackground: true,
-      margin: {
-        top: "18mm",
-        right: "16mm",
-        bottom: "18mm",
-        left: "16mm"
-      }
+      margin: { top: "18mm", right: "16mm", bottom: "18mm", left: "16mm" },
     });
 
     return Buffer.from(pdf);
@@ -125,11 +118,7 @@ async function htmlToPdfBuffer(html: string) {
   }
 }
 
-async function sendPdfEmail(
-  to: string,
-  pdf: Buffer,
-  requestId: string
-) {
+async function sendPdfEmail(to: string, pdf: Buffer, requestId: string) {
   if (!resend) throw new Error("RESEND_API_KEY missing");
   if (!RESEND_FROM) throw new Error("RESEND_FROM missing");
 
@@ -138,12 +127,7 @@ async function sendPdfEmail(
     to: [to],
     subject: "Report Diagnosi Strutturale (PDF)",
     text: `In allegato trovi il tuo report.\nRequest ID: ${requestId}`,
-    attachments: [
-      {
-        filename: `report-${requestId}.pdf`,
-        content: pdf.toString("base64"),
-      },
-    ],
+    attachments: [{ filename: `report-${requestId}.pdf`, content: pdf.toString("base64") }],
   });
 }
 
@@ -158,20 +142,13 @@ app.post("/diagnostic", (req, res) => {
     });
   }
 
-  const requestId = `req_${Date.now()}_${Math.random()
-    .toString(16)
-    .slice(2)}`;
+  const requestId = `req_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
   res.json({ ok: true, requestId });
 
   setTimeout(async () => {
     try {
-      const {
-        score,
-        livello,
-        priorita,
-        perditaStimataMensileEuro,
-      } = scoreAndPriorities(parsed.data);
+      const { score, livello, priorita, perditaStimataMensileEuro } = scoreAndPriorities(parsed.data);
 
       const pdfData: PdfData = {
         requestId,
@@ -188,20 +165,11 @@ app.post("/diagnostic", (req, res) => {
       const html = renderReportHtml(pdfData);
       const pdf = await htmlToPdfBuffer(html);
 
-      await sendPdfEmail(
-        parsed.data.email,
-        pdf,
-        requestId
-      );
+      await sendPdfEmail(parsed.data.email, pdf, requestId);
 
-      console.log(
-        `[bos-api] sent pdf to ${parsed.data.email} (${requestId})`
-      );
+      console.log(`[bos-api] sent pdf to ${parsed.data.email} (${requestId})`);
     } catch (err: any) {
-      console.error(
-        `[bos-api] pdf/email failed (${requestId})`,
-        err?.message || err
-      );
+      console.error(`[bos-api] pdf/email failed (${requestId})`, err?.message || err);
     }
   }, SEND_DELAY_MS);
 });
