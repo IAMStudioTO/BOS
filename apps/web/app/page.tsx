@@ -36,7 +36,7 @@ export default function HomePage() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-sm font-semibold text-black">
-                🔍 AI-driven Cross Analysis (il pezzo “pazzesco”)
+                🔍 Analisi AI-driven
               </p>
               <p className="text-sm text-gray-700 mt-2 leading-7">
                 Una <span className="font-medium text-black">AI</span> incrocia ciò che inserisci con{" "}
