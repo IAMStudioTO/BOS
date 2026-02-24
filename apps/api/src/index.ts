@@ -27,7 +27,7 @@ app.use(
       if (isAllowedOrigin(origin || undefined)) return cb(null, true);
       return cb(new Error("CORS blocked"), false);
     },
-    methods: ["GET", "POST", "OPTIONS"],
+    methods: ["GET", "POST", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "x-admin-key"],
   })
 );
@@ -264,6 +264,34 @@ app.get("/admin/leads.csv", async (req, res) => {
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", 'attachment; filename="bos-leads.csv"');
   res.send(lines.join("\n"));
+});
+
+/**
+ * ADMIN: DELETE lead by id
+ */
+app.delete("/admin/leads/:id", async (req, res) => {
+  try {
+    const forbidden = requireAdmin(req, res);
+    if (forbidden) return;
+
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ ok: false, error: "Invalid id" });
+    }
+
+    const result = await pool.query("DELETE FROM leads WHERE id = $1 RETURNING id", [
+      id,
+    ]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ ok: false, error: "Not found" });
+    }
+
+    return res.json({ ok: true, deletedId: id });
+  } catch (err: any) {
+    console.error("[bos-api] delete lead failed", err?.message || err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
 });
 
 ensureDb()
