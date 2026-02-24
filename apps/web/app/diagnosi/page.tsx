@@ -36,6 +36,11 @@ const initial: Answers = {
   decisionMaker: "",
 };
 
+function toNumberSafe(v: string) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
 export default function Diagnosi() {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Answers>(initial);
@@ -43,9 +48,14 @@ export default function Diagnosi() {
   const [unlocked, setUnlocked] = useState(false);
   const [touched, setTouched] = useState(false);
 
+  const [loading, setLoading] = useState(false);
+  const [requestId, setRequestId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
   const steps = useMemo(
     () => [
       "settore",
+      "sitoUrl",
       "ticketMedio",
       "leadMese",
       "convRate",
@@ -80,16 +90,20 @@ export default function Diagnosi() {
   }
 
   /* =====================
-     SCORING ENGINE
+     SCORING ENGINE (V1)
   ====================== */
 
   const score = (() => {
     let s = 100;
     if (answers.specializzazione === "no") s -= 10;
+    if (answers.sitoComunicaSpec === "no") s -= 10;
     if (answers.proof === "nessuno") s -= 15;
     if (answers.processo === "no") s -= 10;
+    if (answers.materiale === "no") s -= 10;
     if (answers.kpi === "no") s -= 10;
     if (answers.decisioni === "intuitive") s -= 10;
+    if (answers.decisionMaker === "non_chiaro") s -= 5;
+    if (answers.convRate === "non_so") s -= 5;
     return Math.max(0, s);
   })();
 
@@ -103,11 +117,11 @@ export default function Diagnosi() {
       : "Critico";
 
   const perditaStimata = (() => {
-    const ticket = Number(answers.ticketMedio || 0);
-    const lead = Number(answers.leadMese || 0);
+    const ticket = toNumberSafe(answers.ticketMedio);
+    const lead = toNumberSafe(answers.leadMese);
     const conv =
       answers.convRate && answers.convRate !== "non_so"
-        ? Number(answers.convRate) / 100
+        ? toNumberSafe(answers.convRate) / 100
         : 0.1;
     return Math.round(ticket * lead * conv * 0.2);
   })();
@@ -117,6 +131,56 @@ export default function Diagnosi() {
   const showEmailGate = isLast && !unlocked;
   const showResult = unlocked;
 
+  async function submitToApi() {
+    setError(null);
+
+    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+    if (!apiBase) {
+      setError("API non configurata (manca NEXT_PUBLIC_API_BASE_URL).");
+      return;
+    }
+
+    if (!email.includes("@")) {
+      setError("Email non valida.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const payload = {
+        email,
+        sitoUrl: answers.sitoUrl || "",
+        settore: answers.settore,
+        ticketMedio: toNumberSafe(answers.ticketMedio),
+        leadMese: toNumberSafe(answers.leadMese),
+        convRate:
+          answers.convRate === "non_so" || answers.convRate === ""
+            ? null
+            : toNumberSafe(answers.convRate),
+        rawAnswers: answers,
+      };
+
+      const res = await fetch(`${apiBase}/diagnostic`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setError("Errore invio dati. Controlla payload o API.");
+        return;
+      }
+
+      setRequestId(data.requestId || null);
+      setUnlocked(true);
+    } catch (e) {
+      setError("Errore rete o API non raggiungibile.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-white text-black px-6 py-12">
       <div className="max-w-2xl mx-auto">
@@ -124,9 +188,7 @@ export default function Diagnosi() {
 
         {!showEmailGate && !showResult && (
           <div className="border rounded-2xl p-6 space-y-4">
-            <label className="block font-medium">
-              {currentKey}
-            </label>
+            <label className="block font-medium">{currentKey}</label>
 
             <input
               className="w-full border rounded-lg px-4 py-3"
@@ -134,6 +196,7 @@ export default function Diagnosi() {
               onChange={(e) =>
                 setAnswers({ ...answers, [currentKey]: e.target.value })
               }
+              placeholder="Inserisci valore"
             />
 
             {touched && !canGoNext && (
@@ -163,9 +226,7 @@ export default function Diagnosi() {
 
         {showEmailGate && (
           <div className="border rounded-2xl p-6 space-y-4">
-            <h2 className="text-xl font-semibold">
-              Ricevi il report completo
-            </h2>
+            <h2 className="text-xl font-semibold">Ricevi il report completo</h2>
 
             <input
               type="email"
@@ -176,15 +237,14 @@ export default function Diagnosi() {
             />
 
             <button
-              onClick={() => {
-                if (email.includes("@")) {
-                  setUnlocked(true);
-                }
-              }}
-              className="w-full bg-black text-white py-3 rounded-lg"
+              onClick={submitToApi}
+              disabled={loading}
+              className="w-full bg-black text-white py-3 rounded-lg disabled:opacity-60"
             >
-              Sblocca risultato
+              {loading ? "Invio in corso..." : "Sblocca risultato"}
             </button>
+
+            {error && <p className="text-sm text-red-600">{error}</p>}
 
             <p className="text-xs text-gray-400">
               Riceverai anche il report PDF personalizzato.
@@ -202,7 +262,7 @@ export default function Diagnosi() {
               <div>Livello: {livello}</div>
             </div>
 
-            <div>
+            <div className="mb-6">
               <div className="text-sm text-gray-500">
                 Perdita potenziale stimata / mese
               </div>
@@ -210,6 +270,12 @@ export default function Diagnosi() {
                 € {perditaStimata.toLocaleString()}
               </div>
             </div>
+
+            {requestId && (
+              <div className="text-xs text-gray-500">
+                Request ID: <span className="font-mono">{requestId}</span>
+              </div>
+            )}
           </div>
         )}
       </div>
