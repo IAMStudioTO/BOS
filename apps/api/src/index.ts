@@ -27,7 +27,7 @@ app.use(
       if (isAllowedOrigin(origin || undefined)) return cb(null, true);
       return cb(new Error("CORS blocked"), false);
     },
-    methods: ["GET", "POST", "OPTIONS", "DELETE"],
+    methods: ["GET", "POST", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "x-admin-key"],
   })
 );
@@ -41,7 +41,7 @@ const PORT = Number(process.env.PORT || 8080);
  * Admin key per endpoint /admin/*
  * (su Render) ADMIN_API_KEY=...
  */
-const ADMIN_API_KEY = process.env.ADMIN_API_KEY || "";
+const ADMIN_API_KEY = (process.env.ADMIN_API_KEY || "").trim();
 
 /**
  * DB (Render Postgres)
@@ -76,7 +76,7 @@ async function ensureDb() {
 }
 
 function requireAdmin(req: express.Request, res: express.Response) {
-  const key = req.header("x-admin-key") || "";
+  const key = (req.header("x-admin-key") || "").trim();
   if (!ADMIN_API_KEY) {
     return res
       .status(500)
@@ -153,27 +153,32 @@ app.get("/health", (_req, res) => {
  */
 app.post("/diagnostic", async (req, res) => {
   try {
-    // 🔎 DEBUG: cosa arriva davvero dal form?
-    const body = req.body ?? {};
+    // --- DEBUG LOGS (chiave del problema) ---
+    const body = req.body || {};
     const bodyKeys = Object.keys(body);
-    const rawKeys =
-      body && typeof body === "object" && body.rawAnswers && typeof body.rawAnswers === "object"
-        ? Object.keys(body.rawAnswers)
-        : [];
+    const ra = body?.rawAnswers;
+    const rawAnswersType = Array.isArray(ra) ? "array" : typeof ra;
+    const rawAnswersKeys =
+      ra && typeof ra === "object" && !Array.isArray(ra) ? Object.keys(ra) : [];
 
     console.log("[bos-api] /diagnostic received keys:", bodyKeys);
-    console.log("[bos-api] /diagnostic rawAnswers keys:", rawKeys);
+    console.log("[bos-api] /diagnostic rawAnswers type:", rawAnswersType);
+    console.log("[bos-api] /diagnostic rawAnswers keys:", rawAnswersKeys);
 
     const input = DiagnosticSchema.parse(body);
 
-    // 🔎 DEBUG: cosa passa davvero Zod?
-    const parsedRawKeys = input.rawAnswers ? Object.keys(input.rawAnswers) : [];
-    console.log("[bos-api] /diagnostic parsed rawAnswers keys:", parsedRawKeys);
+    const parsedRa = input.rawAnswers || {};
+    console.log(
+      "[bos-api] /diagnostic parsed rawAnswers keys:",
+      Object.keys(parsedRa)
+    );
+    // --- END DEBUG LOGS ---
 
-    const request_id = `req_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const request_id = `req_${Date.now()}_${Math.random()
+      .toString(16)
+      .slice(2)}`;
 
     const { score, livello, perdita_mensile } = scoreAndPriorities(input);
-
     const raw_answers = input.rawAnswers ? input.rawAnswers : null;
 
     await pool.query(
@@ -208,7 +213,7 @@ app.post("/diagnostic", async (req, res) => {
 });
 
 /**
- * ADMIN: JSON leads (include raw_answers)
+ * ADMIN: JSON leads
  */
 app.get("/admin/leads", async (req, res) => {
   const forbidden = requireAdmin(req, res);
@@ -224,7 +229,7 @@ app.get("/admin/leads", async (req, res) => {
 });
 
 /**
- * ADMIN: CSV export (raw_answers come JSON string in colonna)
+ * ADMIN: CSV export
  */
 app.get("/admin/leads.csv", async (req, res) => {
   const forbidden = requireAdmin(req, res);
@@ -275,7 +280,7 @@ app.get("/admin/leads.csv", async (req, res) => {
 });
 
 /**
- * DELETE lead
+ * ADMIN: DELETE lead by id
  */
 app.delete("/admin/leads/:id", async (req, res) => {
   const forbidden = requireAdmin(req, res);
@@ -286,8 +291,8 @@ app.delete("/admin/leads/:id", async (req, res) => {
     return res.status(400).json({ ok: false, error: "Invalid id" });
   }
 
-  await pool.query(`DELETE FROM leads WHERE id = $1`, [id]);
-  return res.json({ ok: true });
+  const result = await pool.query(`DELETE FROM leads WHERE id = $1`, [id]);
+  return res.json({ ok: true, deleted: result.rowCount || 0 });
 });
 
 ensureDb()
