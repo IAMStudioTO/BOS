@@ -33,7 +33,7 @@ app.use(
 );
 
 app.options("*", cors());
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "4mb" }));
 
 const PORT = Number(process.env.PORT || 8080);
 
@@ -54,6 +54,7 @@ const pool = new Pool({
 });
 
 async function ensureDb() {
+  // Tabella + colonna raw_answers (JSONB)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS leads (
       id SERIAL PRIMARY KEY,
@@ -64,8 +65,15 @@ async function ensureDb() {
       score INT NOT NULL,
       livello TEXT NOT NULL,
       perdita_mensile INT NOT NULL DEFAULT 0,
+      raw_answers JSONB,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+  `);
+
+  // Se la tabella esisteva già senza raw_answers, la aggiungiamo
+  await pool.query(`
+    ALTER TABLE leads
+    ADD COLUMN IF NOT EXISTS raw_answers JSONB;
   `);
 }
 
@@ -88,7 +96,7 @@ const DiagnosticSchema = z.object({
   settore: z.string().min(2),
   ticketMedio: z.number().nonnegative(),
   leadMese: z.number().nonnegative(),
-  convRate: z.union([z.number().min(0).max(100), z.literal(null)]), // null = "non lo so"
+  convRate: z.union([z.number().min(0).max(100), z.literal(null)]),
   rawAnswers: z.record(z.any()).optional(),
 });
 
@@ -97,7 +105,7 @@ function scoreAndPriorities(input: z.infer<typeof DiagnosticSchema>) {
 
   let score = 100;
 
-  // Logica semplice (MVP) — puoi raffinarla dopo
+  // MVP scoring (puoi evolverlo)
   if (a.riconoscibilita === "bassa") score -= 15;
   if (a.logo === "grafico") score -= 10;
   if (a.sistema_visivo === "no") score -= 15;
@@ -123,7 +131,7 @@ function scoreAndPriorities(input: z.infer<typeof DiagnosticSchema>) {
       ? "Fragile"
       : "Critico";
 
-  // Per ora: nessuna stima economica (solo raccolta lead)
+  // Per ora: raccolta (niente stima economica)
   const perdita_mensile = 0;
 
   return { score, livello, perdita_mensile };
@@ -143,7 +151,9 @@ app.get("/health", (_req, res) => {
 
 /**
  * DIAGNOSTIC
- * ✅ Ora: salva lead e basta (NO PDF, NO EMAIL)
+ * ✅ salva lead + raw answers
+ * ✅ NO PDF / NO EMAIL
+ * ✅ il frontend non deve usare score/livello
  */
 app.post("/diagnostic", async (req, res) => {
   try {
@@ -155,10 +165,12 @@ app.post("/diagnostic", async (req, res) => {
 
     const { score, livello, perdita_mensile } = scoreAndPriorities(input);
 
+    const raw_answers = input.rawAnswers ? input.rawAnswers : null;
+
     await pool.query(
       `
-      INSERT INTO leads (request_id, email, settore, sito_url, score, livello, perdita_mensile)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO leads (request_id, email, settore, sito_url, score, livello, perdita_mensile, raw_answers)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       `,
       [
         request_id,
@@ -168,16 +180,15 @@ app.post("/diagnostic", async (req, res) => {
         score,
         livello,
         perdita_mensile,
+        raw_answers,
       ]
     );
 
+    // risposta “neutra”: non restituiamo score/livello se non ti serve
     return res.json({
       ok: true,
       requestId: request_id,
-      score,
-      livello,
-      perdita_mensile,
-      note: "Lead salvato. Nessun PDF/email inviati (modalità raccolta).",
+      message: "Analisi avviata. Riceverai il report il prima possibile.",
     });
   } catch (err: any) {
     console.error("[bos-api] diagnostic failed", err?.message || err);
@@ -189,14 +200,14 @@ app.post("/diagnostic", async (req, res) => {
 });
 
 /**
- * ADMIN: JSON leads
+ * ADMIN: JSON leads (include raw_answers)
  */
 app.get("/admin/leads", async (req, res) => {
   const forbidden = requireAdmin(req, res);
   if (forbidden) return;
 
   const { rows } = await pool.query(
-    `SELECT id, request_id, email, settore, sito_url, score, livello, perdita_mensile, created_at
+    `SELECT id, request_id, email, settore, sito_url, score, livello, perdita_mensile, raw_answers, created_at
      FROM leads
      ORDER BY created_at DESC
      LIMIT 500`
@@ -205,14 +216,14 @@ app.get("/admin/leads", async (req, res) => {
 });
 
 /**
- * ADMIN: CSV export
+ * ADMIN: CSV export (raw_answers come JSON string in colonna)
  */
 app.get("/admin/leads.csv", async (req, res) => {
   const forbidden = requireAdmin(req, res);
   if (forbidden) return;
 
   const { rows } = await pool.query(
-    `SELECT id, request_id, email, settore, sito_url, score, livello, perdita_mensile, created_at
+    `SELECT id, request_id, email, settore, sito_url, score, livello, perdita_mensile, raw_answers, created_at
      FROM leads
      ORDER BY created_at DESC
      LIMIT 500`
@@ -227,6 +238,7 @@ app.get("/admin/leads.csv", async (req, res) => {
     "score",
     "livello",
     "perdita_mensile",
+    "raw_answers",
     "created_at",
   ];
 
@@ -238,7 +250,15 @@ app.get("/admin/leads.csv", async (req, res) => {
   };
 
   const lines = [header.join(",")].concat(
-    rows.map((r: any) => header.map((k) => escapeCsv(r[k])).join(","))
+    rows.map((r: any) =>
+      header
+        .map((k) =>
+          k === "raw_answers"
+            ? escapeCsv(r[k] ? JSON.stringify(r[k]) : "")
+            : escapeCsv(r[k])
+        )
+        .join(",")
+    )
   );
 
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
