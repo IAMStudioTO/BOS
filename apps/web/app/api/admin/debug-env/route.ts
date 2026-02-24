@@ -4,32 +4,33 @@ function unauthorized() {
   return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 }
 
+function isAuthorized(req: Request) {
+  const pass = (process.env.ADMIN_PASSWORD || "").trim();
+  const key = (process.env.ADMIN_API_KEY || "").trim();
+
+  const providedPass = (req.headers.get("x-admin-pass") || "").trim();
+  const providedKey = (req.headers.get("x-admin-key") || "").trim();
+
+  const passOk = pass && providedPass === pass;
+  const keyOk = key && providedKey === key;
+
+  return passOk || keyOk;
+}
+
 export async function GET(req: Request) {
-  // Admin password (Vercel)
-  const adminPass = (process.env.ADMIN_PASSWORD || "").trim();
-
-  // Header usato dai client (curl / admin page)
-  const provided = (req.headers.get("x-admin-pass") || "").trim();
-
-  if (!adminPass) {
-    return NextResponse.json(
-      { ok: false, error: "ADMIN_PASSWORD not configured" },
-      { status: 500 }
-    );
-  }
-
-  if (provided !== adminPass) return unauthorized();
+  if (!isAuthorized(req)) return unauthorized();
 
   const apiBaseUrl = (process.env.API_BASE_URL || "").trim();
-  const apiKey = (process.env.ADMIN_API_KEY || "").trim();
+  const adminPass = (process.env.ADMIN_PASSWORD || "").trim();
+  const adminKey = (process.env.ADMIN_API_KEY || "").trim();
 
   return NextResponse.json({
     ok: true,
-    hasAdminPassword: true,
+    hasAdminPassword: Boolean(adminPass),
     adminPasswordLength: adminPass.length,
+    hasAdminApiKey: Boolean(adminKey),
+    adminApiKeyLength: adminKey.length,
     hasApiBaseUrl: Boolean(apiBaseUrl),
     apiBaseUrl,
-    hasApiKey: Boolean(apiKey),
-    apiKeyLength: apiKey.length,
   });
 }
