@@ -5,6 +5,17 @@ import { useState } from "react";
 type AnswerMap = Record<string, any>;
 
 const questions = [
+  // 1️⃣ DOMANDA APERTA STRATEGICA
+  {
+    key: "percezione_attuale",
+    title:
+      "Se oggi dovessi spiegare a un investitore perché il tuo brand è diverso, cosa diresti?",
+    description:
+      "Il modo in cui descrivi il tuo brand rivela spesso il divario tra identità percepita e identità reale.",
+    type: "text",
+  },
+
+  // 2️⃣
   {
     key: "oggi_scelto_per",
     title: "Oggi i tuoi clienti ti scelgono principalmente per:",
@@ -17,6 +28,7 @@ const questions = [
       { label: "Non lo so con certezza", value: "non_lo_so" },
     ],
   },
+
   {
     key: "differenziazione_percepita",
     title: "Ti senti realmente diverso dai tuoi competitor visivamente?",
@@ -29,10 +41,10 @@ const questions = [
       { label: "Per niente", value: "per_niente" },
     ],
   },
+
   {
     key: "logo_visione",
-    title:
-      "Il tuo logo rappresenta una visione o è solo un segno grafico?",
+    title: "Il tuo logo rappresenta una visione o è solo un segno grafico?",
     description:
       "Un simbolo costruisce memoria. Un segno riempie spazio.",
     options: [
@@ -42,6 +54,7 @@ const questions = [
       { label: "Non lo so", value: "non_lo_so" },
     ],
   },
+
   {
     key: "sistema_visivo",
     title:
@@ -55,26 +68,28 @@ const questions = [
       { label: "Non esiste un sistema", value: "non_esiste" },
     ],
   },
+
   {
     key: "percezione_investitore",
     title:
       "Se un investitore vedesse il tuo brand per 30 secondi, lo percepirebbe solido?",
-    description:
-      "Il design è la prima due diligence visiva.",
+    description: "Il design è la prima due diligence visiva.",
     options: [
       { label: "Sì", value: "si" },
       { label: "In parte", value: "in_parte" },
       { label: "No", value: "no" },
     ],
   },
+
   {
     key: "anni_identita",
-    title:
-      "Da quanti anni non evolvi la tua identità visiva?",
+    title: "Da quanti anni non evolvi la tua identità visiva?",
     description:
       "Il mercato evolve ogni giorno. Il tuo brand?",
     type: "number",
   },
+
+  // LINK STRATEGICI
   {
     key: "link_sito",
     title: "Inserisci il link del tuo sito principale",
@@ -96,10 +111,11 @@ const questions = [
       "Il packaging è spesso il primo contatto fisico con il brand.",
     type: "url",
   },
+
+  // UX
   {
     key: "sito_esperienza",
-    title:
-      "Il tuo sito/app è progettato come esperienza o come vetrina?",
+    title: "Il tuo sito/app è progettato come esperienza o come vetrina?",
     description:
       "Una vetrina mostra. Un’esperienza guida e convince.",
     options: [
@@ -108,10 +124,10 @@ const questions = [
       { label: "Non saprei", value: "non_saprei" },
     ],
   },
+
   {
     key: "percorso_visivo",
-    title:
-      "Il percorso visivo guida l’utente?",
+    title: "Il percorso visivo guida l’utente?",
     description:
       "Se l’utente deve capire da solo, stai già perdendo attenzione.",
     options: [
@@ -120,10 +136,10 @@ const questions = [
       { label: "È dispersivo", value: "dispersivo" },
     ],
   },
+
   {
     key: "attrito_design",
-    title:
-      "Il tuo design riduce attrito o lo crea?",
+    title: "Il tuo design riduce attrito o lo crea?",
     description:
       "Ogni secondo di confusione è un passo verso l’abbandono.",
     options: [
@@ -132,10 +148,11 @@ const questions = [
       { label: "Probabilmente crea", value: "crea" },
     ],
   },
+
+  // VALORE
   {
     key: "prezzo_allineato",
-    title:
-      "Il brand comunica il livello di prezzo che chiedi?",
+    title: "Il brand comunica il livello di prezzo che chiedi?",
     description:
       "Se chiedi premium ma sembri standard, c’è disallineamento.",
     options: [
@@ -144,10 +161,10 @@ const questions = [
       { label: "No", value: "no" },
     ],
   },
+
   {
     key: "giustificazione_prezzo",
-    title:
-      "Ti capita di dover giustificare il prezzo?",
+    title: "Ti capita di dover giustificare il prezzo?",
     description:
       "Quando il design è forte, il prezzo si difende da solo.",
     options: [
@@ -157,6 +174,7 @@ const questions = [
       { label: "Mai", value: "mai" },
     ],
   },
+
   {
     key: "percezione_dimensione",
     title:
@@ -169,6 +187,7 @@ const questions = [
       { label: "No", value: "no" },
     ],
   },
+
   {
     key: "riconoscibilita",
     title:
@@ -182,6 +201,8 @@ const questions = [
       { label: "No", value: "no" },
     ],
   },
+
+  // FUTURO
   {
     key: "allineamento_futuro",
     title:
@@ -194,6 +215,7 @@ const questions = [
       { label: "No", value: "no" },
     ],
   },
+
   {
     key: "scalabilita_internazionale",
     title:
@@ -206,6 +228,7 @@ const questions = [
       { label: "No", value: "no" },
     ],
   },
+
   {
     key: "costo_identita",
     title:
@@ -219,6 +242,7 @@ const questions = [
       { label: "Molto", value: "molto" },
     ],
   },
+
   {
     key: "scenario_12_mesi",
     title:
@@ -227,6 +251,7 @@ const questions = [
       "La stagnazione non è neutrale. È regressione lenta.",
     type: "text",
   },
+
   {
     key: "pronto_intervenire",
     title:
@@ -317,7 +342,7 @@ export default function DiagnosiPage() {
             checked={consent}
             onChange={() => setConsent(!consent)}
           />
-          Confermo di voler ricevere l’analisi e autorizzo il trattamento dei dati ai fini della valutazione.
+          Confermo di voler ricevere l’analisi e autorizzo il trattamento dei dati.
         </label>
 
         <button
@@ -334,7 +359,7 @@ export default function DiagnosiPage() {
     <div className="max-w-xl mx-auto py-20">
       <div className="w-full bg-gray-200 h-2 mb-8">
         <div
-          className="bg-black h-2"
+          className="bg-black h-2 transition-all"
           style={{ width: `${progress}%` }}
         />
       </div>
@@ -354,10 +379,10 @@ export default function DiagnosiPage() {
             onClick={() =>
               setAnswers({ ...answers, [current.key]: opt.value })
             }
-            className={`w-full border p-3 mb-3 text-left ${
+            className={`w-full border p-3 mb-3 text-left transition ${
               answers[current.key] === opt.value
                 ? "bg-black text-white"
-                : ""
+                : "hover:bg-gray-100"
             }`}
           >
             {opt.label}
@@ -368,6 +393,7 @@ export default function DiagnosiPage() {
         <input
           type="number"
           className="w-full border p-3 mb-4"
+          value={answers[current.key] || ""}
           onChange={(e) =>
             setAnswers({ ...answers, [current.key]: e.target.value })
           }
@@ -378,6 +404,7 @@ export default function DiagnosiPage() {
         <input
           type="url"
           className="w-full border p-3 mb-4"
+          value={answers[current.key] || ""}
           onChange={(e) =>
             setAnswers({ ...answers, [current.key]: e.target.value })
           }
@@ -387,6 +414,7 @@ export default function DiagnosiPage() {
       {current.type === "text" && (
         <textarea
           className="w-full border p-3 mb-4"
+          value={answers[current.key] || ""}
           onChange={(e) =>
             setAnswers({ ...answers, [current.key]: e.target.value })
           }
