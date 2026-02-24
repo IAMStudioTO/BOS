@@ -1,283 +1,242 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
-type Answers = {
-  settore: string;
-  sitoUrl: string;
-  ticketMedio: string;
-  leadMese: string;
-  convRate: string;
-  valueProp: string;
-  specializzazione: string;
-  sitoComunicaSpec: string;
-  proof: string;
-  processo: string;
-  materiale: string;
-  kpi: string;
-  decisioni: string;
-  decisionMaker: string;
+type Option = {
+  label: string;
+  value: string;
 };
 
-const initial: Answers = {
-  settore: "",
-  sitoUrl: "",
-  ticketMedio: "",
-  leadMese: "",
-  convRate: "",
-  valueProp: "",
-  specializzazione: "",
-  sitoComunicaSpec: "",
-  proof: "",
-  processo: "",
-  materiale: "",
-  kpi: "",
-  decisioni: "",
-  decisionMaker: "",
+type Question = {
+  id: string;
+  question: string;
+  description?: string;
+  type: "radio" | "text" | "number" | "file";
+  options?: Option[];
 };
 
-function toNumberSafe(v: string) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
-export default function Diagnosi() {
-  const [step, setStep] = useState(0);
-  const [answers, setAnswers] = useState<Answers>(initial);
-  const [email, setEmail] = useState("");
-  const [unlocked, setUnlocked] = useState(false);
-  const [touched, setTouched] = useState(false);
-
-  const [loading, setLoading] = useState(false);
-  const [requestId, setRequestId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const steps = useMemo(
-    () => [
-      "settore",
-      "sitoUrl",
-      "ticketMedio",
-      "leadMese",
-      "convRate",
-      "valueProp",
-      "specializzazione",
-      "sitoComunicaSpec",
-      "proof",
-      "processo",
-      "materiale",
-      "kpi",
-      "decisioni",
-      "decisionMaker",
+const questions: Question[] = [
+  {
+    id: "riconoscibilita",
+    question: "Quanto è riconoscibile oggi il tuo brand nel tuo mercato?",
+    description:
+      "Se un cliente vede solo il tuo stile, senza leggere il nome, riuscirebbe a capire che sei tu?",
+    type: "radio",
+    options: [
+      { label: "Altamente riconoscibile", value: "alta" },
+      { label: "Abbastanza riconoscibile", value: "media" },
+      { label: "Poco riconoscibile", value: "bassa" },
+      { label: "Non saprei", value: "non_so" },
     ],
-    []
-  );
+  },
+  {
+    id: "logo",
+    question:
+      "Il tuo logo è un simbolo che rappresenta una visione o è solo un segno grafico?",
+    description:
+      "Un simbolo racconta chi sei. Un segno riempie uno spazio.",
+    type: "radio",
+    options: [
+      { label: "Simbolo strategico", value: "strategico" },
+      { label: "Segno grafico", value: "grafico" },
+      { label: "Non saprei", value: "non_so" },
+    ],
+  },
+  {
+    id: "sistema_visivo",
+    question:
+      "Esiste un sistema visivo coerente (colori, font, layout, regole)?",
+    description:
+      "Quando non esiste un sistema, ogni nuovo materiale indebolisce l’identità invece di rafforzarla.",
+    type: "radio",
+    options: [
+      { label: "Sì, definito", value: "si" },
+      { label: "Parziale", value: "parziale" },
+      { label: "No", value: "no" },
+    ],
+  },
+  {
+    id: "prezzo",
+    question:
+      "Il tuo brand comunica il livello di prezzo che chiedi?",
+    description:
+      "Se chiedi premium ma sembri standard, il cliente percepisce disallineamento.",
+    type: "radio",
+    options: [
+      { label: "Sì", value: "si" },
+      { label: "In parte", value: "parziale" },
+      { label: "No", value: "no" },
+    ],
+  },
+  {
+    id: "esperienza",
+    question:
+      "Il tuo sito/app è progettato come esperienza o come semplice vetrina?",
+    description:
+      "Una vetrina mostra. Un’esperienza guida e convince.",
+    type: "radio",
+    options: [
+      { label: "Esperienza progettata", value: "esperienza" },
+      { label: "Vetrina", value: "vetrina" },
+      { label: "Non saprei", value: "non_so" },
+    ],
+  },
+  {
+    id: "attrito",
+    question:
+      "Il tuo design riduce attrito o lo crea?",
+    description:
+      "Ogni secondo di confusione è un passo verso l’abbandono.",
+    type: "radio",
+    options: [
+      { label: "Riduce attrito", value: "riduce" },
+      { label: "Non so", value: "non_so" },
+      { label: "Probabilmente crea attrito", value: "crea" },
+    ],
+  },
+  {
+    id: "ambizione",
+    question:
+      "L’identità attuale è allineata con dove vuoi portare il brand nei prossimi 3 anni?",
+    description:
+      "L’ambizione senza struttura visiva è fragile.",
+    type: "radio",
+    options: [
+      { label: "Sì", value: "si" },
+      { label: "In parte", value: "parziale" },
+      { label: "No", value: "no" },
+    ],
+  },
+  {
+    id: "materiali",
+    question:
+      "Carica logo, packaging, screenshot sito/app o materiali grafici.",
+    description:
+      "L’identità non è ciò che pensi di avere. È ciò che si vede.",
+    type: "file",
+  },
+];
 
-  const totalSteps = steps.length;
-  const currentKey = steps[step] as keyof Answers;
-  const isLast = step === totalSteps - 1;
+export default function DiagnosiPage() {
+  const [step, setStep] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, any>>({});
+  const [email, setEmail] = useState("");
+  const [completed, setCompleted] = useState(false);
 
-  const canGoNext = answers[currentKey] !== "";
+  const current = questions[step];
 
-  function next() {
-    setTouched(true);
-    if (!canGoNext) return;
-    setTouched(false);
-    if (!isLast) setStep(step + 1);
-  }
+  const handleAnswer = (value: any) => {
+    setAnswers({ ...answers, [current.id]: value });
+  };
 
-  function prev() {
-    if (step > 0) setStep(step - 1);
-  }
-
-  /* =====================
-     SCORING ENGINE (V1)
-  ====================== */
-
-  const score = (() => {
-    let s = 100;
-    if (answers.specializzazione === "no") s -= 10;
-    if (answers.sitoComunicaSpec === "no") s -= 10;
-    if (answers.proof === "nessuno") s -= 15;
-    if (answers.processo === "no") s -= 10;
-    if (answers.materiale === "no") s -= 10;
-    if (answers.kpi === "no") s -= 10;
-    if (answers.decisioni === "intuitive") s -= 10;
-    if (answers.decisionMaker === "non_chiaro") s -= 5;
-    if (answers.convRate === "non_so") s -= 5;
-    return Math.max(0, s);
-  })();
-
-  const livello =
-    score >= 80
-      ? "Strutturato"
-      : score >= 60
-      ? "In consolidamento"
-      : score >= 40
-      ? "Fragile"
-      : "Critico";
-
-  const perditaStimata = (() => {
-    const ticket = toNumberSafe(answers.ticketMedio);
-    const lead = toNumberSafe(answers.leadMese);
-    const conv =
-      answers.convRate && answers.convRate !== "non_so"
-        ? toNumberSafe(answers.convRate) / 100
-        : 0.1;
-    return Math.round(ticket * lead * conv * 0.2);
-  })();
-
-  /* ===================== */
-
-  const showEmailGate = isLast && !unlocked;
-  const showResult = unlocked;
-
-  async function submitToApi() {
-    setError(null);
-
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
-    if (!apiBase) {
-      setError("API non configurata (manca NEXT_PUBLIC_API_BASE_URL).");
-      return;
+  const next = () => {
+    if (step < questions.length - 1) {
+      setStep(step + 1);
+    } else {
+      setCompleted(true);
     }
+  };
 
-    if (!email.includes("@")) {
-      setError("Email non valida.");
-      return;
-    }
+  const calculateScore = () => {
+    let score = 100;
 
-    setLoading(true);
-    try {
-      const payload = {
-        email,
-        sitoUrl: answers.sitoUrl || "",
-        settore: answers.settore,
-        ticketMedio: toNumberSafe(answers.ticketMedio),
-        leadMese: toNumberSafe(answers.leadMese),
-        convRate:
-          answers.convRate === "non_so" || answers.convRate === ""
-            ? null
-            : toNumberSafe(answers.convRate),
-        rawAnswers: answers,
-      };
+    if (answers.riconoscibilita === "bassa") score -= 15;
+    if (answers.logo === "grafico") score -= 10;
+    if (answers.sistema_visivo === "no") score -= 15;
+    if (answers.prezzo === "no") score -= 10;
+    if (answers.attrito === "crea") score -= 15;
+    if (answers.ambizione === "no") score -= 10;
 
-      const res = await fetch(`${apiBase}/diagnostic`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+    return Math.max(score, 0);
+  };
 
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        setError("Errore invio dati. Controlla payload o API.");
-        return;
-      }
+  if (completed) {
+    const score = calculateScore();
 
-      setRequestId(data.requestId || null);
-      setUnlocked(true);
-    } catch (e) {
-      setError("Errore rete o API non raggiungibile.");
-    } finally {
-      setLoading(false);
-    }
+    return (
+      <main className="min-h-screen bg-white text-black flex items-center justify-center px-6">
+        <div className="max-w-xl text-center">
+          <h1 className="text-3xl font-bold mb-6">
+            Risultato Diagnosi
+          </h1>
+
+          <p className="text-xl mb-4">
+            Score: {score}/100
+          </p>
+
+          <input
+            type="email"
+            placeholder="Inserisci la tua email per ricevere il report"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="border px-4 py-2 rounded w-full mb-4"
+          />
+
+          <button className="bg-black text-white px-6 py-3 rounded">
+            Ricevi Report
+          </button>
+        </div>
+      </main>
+    );
   }
 
   return (
-    <main className="min-h-screen bg-white text-black px-6 py-12">
-      <div className="max-w-2xl mx-auto">
-        <h1 className="text-3xl font-bold mb-4">Diagnosi Strutturale</h1>
+    <main className="min-h-screen bg-white text-black flex items-center justify-center px-6">
+      <div className="max-w-xl w-full">
+        <h1 className="text-2xl font-bold mb-6">
+          Diagnosi Identità e Design
+        </h1>
 
-        {!showEmailGate && !showResult && (
-          <div className="border rounded-2xl p-6 space-y-4">
-            <label className="block font-medium">{currentKey}</label>
-
-            <input
-              className="w-full border rounded-lg px-4 py-3"
-              value={answers[currentKey]}
-              onChange={(e) =>
-                setAnswers({ ...answers, [currentKey]: e.target.value })
-              }
-              placeholder="Inserisci valore"
-            />
-
-            {touched && !canGoNext && (
-              <p className="text-sm text-red-600">
-                Compila il campo per continuare.
-              </p>
-            )}
-
-            <div className="flex justify-between pt-4">
-              <button
-                onClick={prev}
-                disabled={step === 0}
-                className="px-4 py-2 border rounded-lg disabled:opacity-40"
-              >
-                Indietro
-              </button>
-
-              <button
-                onClick={next}
-                className="px-5 py-3 bg-black text-white rounded-lg"
-              >
-                {isLast ? "Calcola risultato" : "Avanti"}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {showEmailGate && (
-          <div className="border rounded-2xl p-6 space-y-4">
-            <h2 className="text-xl font-semibold">Ricevi il report completo</h2>
-
-            <input
-              type="email"
-              placeholder="Inserisci la tua email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full border rounded-lg px-4 py-3"
-            />
-
-            <button
-              onClick={submitToApi}
-              disabled={loading}
-              className="w-full bg-black text-white py-3 rounded-lg disabled:opacity-60"
-            >
-              {loading ? "Invio in corso..." : "Sblocca risultato"}
-            </button>
-
-            {error && <p className="text-sm text-red-600">{error}</p>}
-
-            <p className="text-xs text-gray-400">
-              Riceverai anche il report PDF personalizzato.
+        <div className="mb-4">
+          <p className="font-medium mb-2">{current.question}</p>
+          {current.description && (
+            <p className="text-sm text-gray-500 mb-4">
+              {current.description}
             </p>
-          </div>
+          )}
+        </div>
+
+        {current.type === "radio" &&
+          current.options?.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => handleAnswer(opt.value)}
+              className="block w-full border px-4 py-2 mb-2 rounded hover:bg-gray-100"
+            >
+              {opt.label}
+            </button>
+          ))}
+
+        {current.type === "text" && (
+          <input
+            type="text"
+            onChange={(e) => handleAnswer(e.target.value)}
+            className="border px-4 py-2 rounded w-full"
+          />
         )}
 
-        {showResult && (
-          <div className="mt-10 border rounded-2xl p-6">
-            <h3 className="text-2xl font-bold mb-4">Risultato</h3>
-
-            <div className="mb-4">
-              <div className="text-sm text-gray-500">Score</div>
-              <div className="text-4xl font-bold">{score}/100</div>
-              <div>Livello: {livello}</div>
-            </div>
-
-            <div className="mb-6">
-              <div className="text-sm text-gray-500">
-                Perdita potenziale stimata / mese
-              </div>
-              <div className="text-2xl font-semibold">
-                € {perditaStimata.toLocaleString()}
-              </div>
-            </div>
-
-            {requestId && (
-              <div className="text-xs text-gray-500">
-                Request ID: <span className="font-mono">{requestId}</span>
-              </div>
-            )}
-          </div>
+        {current.type === "number" && (
+          <input
+            type="number"
+            onChange={(e) => handleAnswer(e.target.value)}
+            className="border px-4 py-2 rounded w-full"
+          />
         )}
+
+        {current.type === "file" && (
+          <input
+            type="file"
+            onChange={(e) => handleAnswer(e.target.files)}
+            className="border px-4 py-2 rounded w-full"
+          />
+        )}
+
+        <button
+          onClick={next}
+          className="mt-6 bg-black text-white px-6 py-3 rounded"
+        >
+          Continua
+        </button>
       </div>
     </main>
   );
