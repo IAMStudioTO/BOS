@@ -3,6 +3,7 @@ import cors from "cors";
 import { z } from "zod";
 import { chromium } from "playwright";
 import { Resend } from "resend";
+import { Pool } from "pg";
 import { renderReportHtml, type PdfData } from "./pdfTemplate.js";
 
 const app = express();
@@ -12,7 +13,7 @@ const allowedOrigins = [
   "https://www.bos-delta.vercel.app",
 ];
 
-// Manual origin guard
+// ===== CORS GUARD =====
 app.use((req, res, next) => {
   const origin = req.headers.origin as string | undefined;
 
@@ -25,7 +26,6 @@ app.use((req, res, next) => {
   return next();
 });
 
-// CORS middleware
 app.use(
   cors({
     origin: allowedOrigins,
@@ -34,23 +34,58 @@ app.use(
   })
 );
 
-// Explicit preflight handling
 app.options("*", cors({ origin: allowedOrigins }));
 
 app.use(express.json({ limit: "2mb" }));
 
+// ===== ENV =====
 const PORT = Number(process.env.PORT || 8080);
-
+const DATABASE_URL = process.env.DATABASE_URL || "";
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 const RESEND_FROM = process.env.RESEND_FROM || "";
 const SEND_DELAY_MS = Number(process.env.SEND_DELAY_MS || 180000);
 
+// ===== POSTGRES =====
+if (!DATABASE_URL) {
+  console.error("DATABASE_URL missing");
+}
+
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+});
+
+// Create table if not exists
+async function initDb() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS leads (
+      id SERIAL PRIMARY KEY,
+      request_id TEXT NOT NULL,
+      email TEXT NOT NULL,
+      settore TEXT,
+      sito_url TEXT,
+      score INTEGER,
+      livello TEXT,
+      perdita_mensile INTEGER,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+  console.log("[bos-api] DB ready");
+}
+
+initDb().catch((err) => {
+  console.error("DB init failed:", err);
+});
+
+// ===== RESEND =====
 const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
+// ===== HEALTH =====
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "bos-api", ts: new Date().toISOString() });
 });
 
+// ===== SCHEMA =====
 const DiagnosticSchema = z.object({
   email: z.string().email(),
   sitoUrl: z.string().optional().or(z.literal("")),
@@ -61,6 +96,7 @@ const DiagnosticSchema = z.object({
   rawAnswers: z.record(z.any()).optional(),
 });
 
+// ===== SCORING =====
 function scoreAndPriorities(input: z.infer<typeof DiagnosticSchema>) {
   const a = (input.rawAnswers || {}) as Record<string, any>;
 
@@ -87,29 +123,17 @@ function scoreAndPriorities(input: z.infer<typeof DiagnosticSchema>) {
       ? "Fragile"
       : "Critico";
 
-  const priorita: string[] = [];
-
-  if (a.proof === "nessuno")
-    priorita.push("Costruire case study documentati.");
-  if (a.processo === "no")
-    priorita.push("Formalizzare processo operativo con step chiari.");
-  if (a.kpi === "no")
-    priorita.push("Implementare KPI mensili (lead, conversione, ticket).");
-  if (a.specializzazione === "no")
-    priorita.push("Definire segmento prioritario e proposta di valore.");
-
   const conv = input.convRate === null ? 10 : input.convRate;
-
   const fatturatoMensile =
     input.ticketMedio * input.leadMese * (conv / 100);
-
   const perditaStimataMensileEuro = Math.round(
     fatturatoMensile * 0.2
   );
 
-  return { score, livello, priorita, perditaStimataMensileEuro };
+  return { score, livello, perditaStimataMensileEuro };
 }
 
+// ===== PDF =====
 async function htmlToPdfBuffer(html: string) {
   const browser = await chromium.launch({
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
@@ -122,12 +146,6 @@ async function htmlToPdfBuffer(html: string) {
     const pdf = await page.pdf({
       format: "A4",
       printBackground: true,
-      margin: {
-        top: "18mm",
-        right: "16mm",
-        bottom: "18mm",
-        left: "16mm",
-      },
     });
 
     return Buffer.from(pdf);
@@ -158,33 +176,45 @@ async function sendPdfEmail(
   });
 }
 
-app.post("/diagnostic", (req, res) => {
+// ===== ROUTE =====
+app.post("/diagnostic", async (req, res) => {
   const parsed = DiagnosticSchema.safeParse(req.body);
 
   if (!parsed.success) {
     return res.status(400).json({
       ok: false,
       error: "Invalid payload",
-      details: parsed.error.flatten(),
     });
   }
 
-  const requestId = `req_${Date.now()}_${Math.random()
-    .toString(16)
-    .slice(2)}`;
+  const requestId = `req_${Date.now()}`;
 
-  res.json({ ok: true, requestId });
+  const { score, livello, perditaStimataMensileEuro } =
+    scoreAndPriorities(parsed.data);
+
+  // Save to DB immediately
+  await pool.query(
+    `
+    INSERT INTO leads
+    (request_id, email, settore, sito_url, score, livello, perdita_mensile)
+    VALUES ($1,$2,$3,$4,$5,$6,$7)
+    `,
+    [
+      requestId,
+      parsed.data.email,
+      parsed.data.settore,
+      parsed.data.sitoUrl || "",
+      score,
+      livello,
+      perditaStimataMensileEuro,
+    ]
+  );
+
+  res.json({ ok: true, requestId, score, livello });
 
   setTimeout(async () => {
     try {
-      const {
-        score,
-        livello,
-        priorita,
-        perditaStimataMensileEuro,
-      } = scoreAndPriorities(parsed.data);
-
-      const pdfData: PdfData = {
+      const html = renderReportHtml({
         requestId,
         email: parsed.data.email,
         sitoUrl: parsed.data.sitoUrl || "",
@@ -192,31 +222,29 @@ app.post("/diagnostic", (req, res) => {
         score,
         livello,
         perditaStimataMensileEuro,
-        priorita,
+        priorita: [],
         createdAtISO: new Date().toISOString(),
-      };
+      });
 
-      const html = renderReportHtml(pdfData);
       const pdf = await htmlToPdfBuffer(html);
+      await sendPdfEmail(parsed.data.email, pdf, requestId);
 
-      await sendPdfEmail(
-        parsed.data.email,
-        pdf,
-        requestId
-      );
-
-      console.log(
-        `[bos-api] sent pdf to ${parsed.data.email} (${requestId})`
-      );
-    } catch (err: any) {
-      console.error(
-        `[bos-api] pdf/email failed (${requestId})`,
-        err?.message || err
-      );
+      console.log("[bos-api] sent pdf:", requestId);
+    } catch (err) {
+      console.error("PDF/email failed:", err);
     }
   }, SEND_DELAY_MS);
+});
+
+// ===== ADMIN ROUTE =====
+app.get("/admin/leads", async (_req, res) => {
+  const { rows } = await pool.query(
+    `SELECT * FROM leads ORDER BY created_at DESC LIMIT 50`
+  );
+  res.json(rows);
 });
 
 app.listen(PORT, () => {
   console.log(`[bos-api] listening on :${PORT}`);
 });
+
