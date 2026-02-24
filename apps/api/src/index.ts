@@ -6,16 +6,32 @@ import { Resend } from "resend";
 import { renderReportHtml, type PdfData } from "./pdfTemplate.js";
 
 const app = express();
-app.use(cors());
+
+const allowedOrigins = [
+  "https://bos-delta.vercel.app",
+  "https://www.bos-delta.vercel.app"
+];
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("CORS not allowed"), false);
+    }
+  })
+);
+
 app.use(express.json({ limit: "2mb" }));
 
 const PORT = Number(process.env.PORT || 8080);
 
-// ENV su Render
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
-const RESEND_FROM = process.env.RESEND_FROM || ""; // es: "BOS <report@tuodominio.it>"
-
-// Delay (ms) — per MVP: 3 minuti
+const RESEND_FROM = process.env.RESEND_FROM || "";
 const SEND_DELAY_MS = Number(process.env.SEND_DELAY_MS || 180000);
 
 const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
@@ -30,7 +46,7 @@ const DiagnosticSchema = z.object({
   settore: z.string().min(2),
   ticketMedio: z.number().nonnegative(),
   leadMese: z.number().nonnegative(),
-  convRate: z.union([z.number().min(0).max(100), z.literal(null)]), // null = "non lo so"
+  convRate: z.union([z.number().min(0).max(100), z.literal(null)]),
   rawAnswers: z.record(z.any()).optional(),
 });
 
@@ -38,6 +54,7 @@ function scoreAndPriorities(input: z.infer<typeof DiagnosticSchema>) {
   const a = (input.rawAnswers || {}) as Record<string, any>;
 
   let score = 100;
+
   if (a.specializzazione === "no") score -= 10;
   if (a.sitoComunicaSpec === "no") score -= 10;
   if (a.proof === "nessuno") score -= 15;
@@ -60,14 +77,24 @@ function scoreAndPriorities(input: z.infer<typeof DiagnosticSchema>) {
       : "Critico";
 
   const priorita: string[] = [];
-  if (a.proof === "nessuno") priorita.push("Costruire case study documentati (proof).");
-  if (a.processo === "no") priorita.push("Formalizzare processo (step, tempi, output).");
-  if (a.kpi === "no") priorita.push("Implementare KPI minimi mensili (lead, conversione, ticket).");
-  if (a.specializzazione === "no") priorita.push("Definire segmento prioritario e proposta valore.");
 
-  const conv = input.convRate === null ? 10 : input.convRate; // prudenziale 10%
-  const fatturatoMensile = input.ticketMedio * input.leadMese * (conv / 100);
-  const perditaStimataMensileEuro = Math.round(fatturatoMensile * 0.2); // 20% inefficienza V1
+  if (a.proof === "nessuno")
+    priorita.push("Costruire case study documentati.");
+  if (a.processo === "no")
+    priorita.push("Formalizzare processo operativo con step chiari.");
+  if (a.kpi === "no")
+    priorita.push("Implementare KPI mensili (lead, conversione, ticket).");
+  if (a.specializzazione === "no")
+    priorita.push("Definire segmento prioritario e proposta di valore.");
+
+  const conv = input.convRate === null ? 10 : input.convRate;
+
+  const fatturatoMensile =
+    input.ticketMedio * input.leadMese * (conv / 100);
+
+  const perditaStimataMensileEuro = Math.round(
+    fatturatoMensile * 0.2
+  );
 
   return { score, livello, priorita, perditaStimataMensileEuro };
 }
@@ -80,18 +107,29 @@ async function htmlToPdfBuffer(html: string) {
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "load" });
+
     const pdf = await page.pdf({
       format: "A4",
       printBackground: true,
-      margin: { top: "18mm", right: "16mm", bottom: "18mm", left: "16mm" },
+      margin: {
+        top: "18mm",
+        right: "16mm",
+        bottom: "18mm",
+        left: "16mm"
+      }
     });
+
     return Buffer.from(pdf);
   } finally {
     await browser.close();
   }
 }
 
-async function sendPdfEmail(to: string, pdf: Buffer, requestId: string) {
+async function sendPdfEmail(
+  to: string,
+  pdf: Buffer,
+  requestId: string
+) {
   if (!resend) throw new Error("RESEND_API_KEY missing");
   if (!RESEND_FROM) throw new Error("RESEND_FROM missing");
 
@@ -99,7 +137,7 @@ async function sendPdfEmail(to: string, pdf: Buffer, requestId: string) {
     from: RESEND_FROM,
     to: [to],
     subject: "Report Diagnosi Strutturale (PDF)",
-    text: `In allegato trovi il tuo report PDF.\nRequest ID: ${requestId}`,
+    text: `In allegato trovi il tuo report.\nRequest ID: ${requestId}`,
     attachments: [
       {
         filename: `report-${requestId}.pdf`,
@@ -111,6 +149,7 @@ async function sendPdfEmail(to: string, pdf: Buffer, requestId: string) {
 
 app.post("/diagnostic", (req, res) => {
   const parsed = DiagnosticSchema.safeParse(req.body);
+
   if (!parsed.success) {
     return res.status(400).json({
       ok: false,
@@ -119,16 +158,20 @@ app.post("/diagnostic", (req, res) => {
     });
   }
 
-  const requestId = `req_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const requestId = `req_${Date.now()}_${Math.random()
+    .toString(16)
+    .slice(2)}`;
 
-  // Risposta immediata
   res.json({ ok: true, requestId });
 
-  // Async: genera subito, invia dopo 3 min
   setTimeout(async () => {
     try {
-      const { score, livello, priorita, perditaStimataMensileEuro } =
-        scoreAndPriorities(parsed.data);
+      const {
+        score,
+        livello,
+        priorita,
+        perditaStimataMensileEuro,
+      } = scoreAndPriorities(parsed.data);
 
       const pdfData: PdfData = {
         requestId,
@@ -144,11 +187,21 @@ app.post("/diagnostic", (req, res) => {
 
       const html = renderReportHtml(pdfData);
       const pdf = await htmlToPdfBuffer(html);
-      await sendPdfEmail(parsed.data.email, pdf, requestId);
 
-      console.log(`[bos-api] sent pdf to ${parsed.data.email} (${requestId})`);
+      await sendPdfEmail(
+        parsed.data.email,
+        pdf,
+        requestId
+      );
+
+      console.log(
+        `[bos-api] sent pdf to ${parsed.data.email} (${requestId})`
+      );
     } catch (err: any) {
-      console.error(`[bos-api] pdf/email failed (${requestId})`, err?.message || err);
+      console.error(
+        `[bos-api] pdf/email failed (${requestId})`,
+        err?.message || err
+      );
     }
   }, SEND_DELAY_MS);
 });
