@@ -1,30 +1,30 @@
 import express from "express";
 import cors from "cors";
 import { z } from "zod";
-import { Pool } from "pg";
+import pg from "pg";
 
 const app = express();
-app.use(express.json({ limit: "2mb" }));
 
-/* =========================
-   ENV
-========================= */
+/**
+ * CORS: consenti SOLO i domini del frontend
+ * - imposta CORS_ORIGINS su Render: es. "https://bos-delta.vercel.app,https://bos-delta-xxx.vercel.app"
+ */
+const CORS_ORIGINS = (process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
-const PORT = Number(process.env.PORT || 8080);
-const ADMIN_API_KEY = process.env.ADMIN_API_KEY || "";
-
-const ALLOWED_ORIGINS = [
-  "https://bos-delta.vercel.app",
-];
+function isAllowedOrigin(origin?: string) {
+  if (!origin) return true; // curl/server-to-server
+  if (CORS_ORIGINS.length === 0) return true; // fallback (non consigliato in prod)
+  return CORS_ORIGINS.includes(origin);
+}
 
 app.use(
   cors({
-    origin: function (origin, callback) {
-      if (!origin) return callback(null, true);
-      if (ALLOWED_ORIGINS.includes(origin)) {
-        return callback(null, true);
-      }
-      return callback(new Error("Not allowed by CORS"));
+    origin(origin, cb) {
+      if (isAllowedOrigin(origin || undefined)) return cb(null, true);
+      return cb(new Error("CORS blocked"), false);
     },
     methods: ["GET", "POST", "OPTIONS"],
     allowedHeaders: ["Content-Type", "x-admin-key"],
@@ -32,126 +32,224 @@ app.use(
 );
 
 app.options("*", cors());
+app.use(express.json({ limit: "2mb" }));
 
-/* =========================
-   DATABASE
-========================= */
+const PORT = Number(process.env.PORT || 8080);
+
+/**
+ * Admin key per endpoint /admin/*
+ * (su Render) ADMIN_API_KEY=...
+ */
+const ADMIN_API_KEY = process.env.ADMIN_API_KEY || "";
+
+/**
+ * DB (Render Postgres)
+ */
+const { Pool } = pg;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false,
-  },
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : undefined,
 });
 
-pool.connect()
-  .then(() => console.log("[bos-api] DB ready"))
-  .catch((err) => console.error("[bos-api] DB error:", err));
-
-/* =========================
-   UTILS
-========================= */
-
-function requireAdminKey(req: express.Request, res: express.Response) {
-  const key = req.header("x-admin-key");
-  if (!key || key !== ADMIN_API_KEY) {
-    res.status(403).json({ ok: false, error: "Forbidden" });
-    return false;
-  }
-  return true;
+async function ensureDb() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS leads (
+      id SERIAL PRIMARY KEY,
+      request_id TEXT NOT NULL,
+      email TEXT NOT NULL,
+      settore TEXT NOT NULL,
+      sito_url TEXT,
+      score INT NOT NULL,
+      livello TEXT NOT NULL,
+      perdita_mensile INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 }
 
-/* =========================
-   HEALTH
-========================= */
+function requireAdmin(req: express.Request, res: express.Response) {
+  const key = req.header("x-admin-key") || "";
+  if (!ADMIN_API_KEY) {
+    return res
+      .status(500)
+      .json({ ok: false, error: "ADMIN_API_KEY not configured" });
+  }
+  if (key !== ADMIN_API_KEY) {
+    return res.status(403).json({ ok: false, error: "Forbidden" });
+  }
+  return null;
+}
 
+const DiagnosticSchema = z.object({
+  email: z.string().email(),
+  sitoUrl: z.string().optional().or(z.literal("")),
+  settore: z.string().min(2),
+  ticketMedio: z.number().nonnegative(),
+  leadMese: z.number().nonnegative(),
+  convRate: z.union([z.number().min(0).max(100), z.literal(null)]), // null = "non lo so"
+  rawAnswers: z.record(z.any()).optional(),
+});
+
+function scoreAndPriorities(input: z.infer<typeof DiagnosticSchema>) {
+  const a = (input.rawAnswers || {}) as Record<string, any>;
+
+  let score = 100;
+
+  // NOTE: manteniamo la tua logica esistente (aggiornala quando vuoi)
+  if (a.riconoscibilita === "bassa") score -= 15;
+  if (a.logo === "grafico") score -= 10;
+  if (a.sistema_visivo === "no") score -= 15;
+  if (a.coerenza_touchpoint === "disordinato") score -= 15;
+  if (a.tono_voce === "no") score -= 10;
+  if (a.prezzo === "no") score -= 10;
+  if (a.gerarchia === "confusa") score -= 10;
+  if (a.attrito === "crea") score -= 15;
+  if (a.credibilita === "no") score -= 12;
+  if (a.packaging_valore === "funzionale") score -= 8;
+  if (a.riconoscibile_mercato === "no") score -= 10;
+  if (a.ambizione === "no") score -= 10;
+  if (a.scalabilita === "no") score -= 10;
+
+  score = Math.max(0, score);
+
+  const livello =
+    score >= 85
+      ? "Strutturato"
+      : score >= 70
+      ? "In consolidamento"
+      : score >= 50
+      ? "Fragile"
+      : "Critico";
+
+  // Perdita mensile (MVP): se non vuoi mostrarla ora, la lasciamo 0
+  const perdita_mensile = 0;
+
+  return { score, livello, perdita_mensile };
+}
+
+/**
+ * HEALTH
+ */
 app.get("/health", (_req, res) => {
-  res.json({
-    ok: true,
-    service: "bos-api",
-    ts: new Date().toISOString(),
-  });
+  res.json({ ok: true, service: "bos-api", ts: new Date().toISOString() });
 });
 
-/* =========================
-   ADMIN JSON LEADS
-========================= */
-
-app.get("/admin/leads", async (req, res) => {
-  if (!requireAdminKey(req, res)) return;
-
+/**
+ * DIAGNOSTIC
+ * ✅ Ora: salva lead e basta (NO PDF, NO EMAIL)
+ */
+app.post("/diagnostic", async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      `SELECT * FROM leads ORDER BY created_at DESC`
-    );
+    const input = DiagnosticSchema.parse(req.body);
 
-    res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false, error: "DB error" });
-  }
-});
+    const request_id = `req_${Date.now()}_${Math.random()
+      .toString(16)
+      .slice(2)}`;
 
-/* =========================
-   ADMIN CSV EXPORT
-========================= */
+    const { score, livello, perdita_mensile } = scoreAndPriorities(input);
 
-app.get("/admin/leads.csv", async (req, res) => {
-  if (!requireAdminKey(req, res)) return;
-
-  try {
-    const { rows } = await pool.query(
-      `SELECT * FROM leads ORDER BY created_at DESC`
-    );
-
-    const header = [
-      "id",
-      "request_id",
-      "email",
-      "settore",
-      "sito_url",
-      "score",
-      "livello",
-      "perdita_mensile",
-      "created_at",
-    ];
-
-    const csvRows = rows.map((r) =>
+    // salva su DB
+    await pool.query(
+      `
+      INSERT INTO leads (request_id, email, settore, sito_url, score, livello, perdita_mensile)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `,
       [
-        r.id,
-        r.request_id,
-        r.email,
-        r.settore,
-        r.sito_url,
-        r.score,
-        r.livello,
-        r.perdita_mensile,
-        r.created_at
-          ? new Date(r.created_at).toISOString()
-          : "",
+        request_id,
+        input.email,
+        input.settore,
+        input.sitoUrl || null,
+        score,
+        livello,
+        perdita_mensile,
       ]
-        .map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`)
-        .join(",")
     );
 
-    const csv = [header.join(","), ...csvRows].join("\n");
-
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader(
-      "Content-Disposition",
-      'attachment; filename="bos-leads.csv"'
-    );
-
-    res.send(csv);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false, error: "CSV generation failed" });
+    // Risposta immediata
+    return res.json({
+      ok: true,
+      requestId: request_id,
+      score,
+      livello,
+      perdita_mensile,
+      note: "Lead salvato. Nessun PDF/email inviati (modalità raccolta).",
+    });
+  } catch (err: any) {
+    console.error("[bos-api] diagnostic failed", err?.message || err);
+    if (err?.name === "ZodError") {
+      return res.status(400).json({ ok: false, error: "Invalid payload" });
+    }
+    return res.status(500).json({ ok: false, error: "Server error" });
   }
 });
 
-/* =========================
-   START
-========================= */
+/**
+ * ADMIN: JSON leads
+ */
+app.get("/admin/leads", async (req, res) => {
+  const forbidden = requireAdmin(req, res);
+  if (forbidden) return;
+
+  const { rows } = await pool.query(
+    `SELECT id, request_id, email, settore, sito_url, score, livello, perdita_mensile, created_at
+     FROM leads
+     ORDER BY created_at DESC
+     LIMIT 500`
+  );
+  res.json(rows);
+});
+
+/**
+ * ADMIN: CSV export
+ */
+app.get("/admin/leads.csv", async (req, res) => {
+  const forbidden = requireAdmin(req, res);
+  if (forbidden) return;
+
+  const { rows } = await pool.query(
+    `SELECT id, request_id, email, settore, sito_url, score, livello, perdita_mensile, created_at
+     FROM leads
+     ORDER BY created_at DESC
+     LIMIT 500`
+  );
+
+  const header = [
+    "id",
+    "request_id",
+    "email",
+    "settore",
+    "sito_url",
+    "score",
+    "livello",
+    "perdita_mensile",
+    "created_at",
+  ];
+
+  const escapeCsv = (v: any) => {
+    const s = String(v ?? "");
+    const needs = /[",\n]/.test(s);
+    const out = s.replace(/"/g, '""');
+    return needs ? `"${out}"` : out;
+  };
+
+  const lines = [header.join(",")].concat(
+    rows.map((r: any) =>
+      header.map((k) => escapeCsv(r[k])).join(",")
+    )
+  );
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader(
+    "Content-Disposition",
+    'attachment; filename="bos-leads.csv"'
+  );
+  res.send(lines.join("\n"));
+});
+
+ensureDb()
+  .then(() => console.log("[bos-api] DB ready"))
+  .catch((e) => console.error("[bos-api] DB init failed", e));
 
 app.listen(PORT, () => {
   console.log(`[bos-api] listening on :${PORT}`);
