@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 
-function unauthorized() {
-  return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-}
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 function isAuthorized(req: Request) {
   const pass = (process.env.ADMIN_PASSWORD || "").trim();
@@ -14,7 +13,11 @@ function isAuthorized(req: Request) {
   const passOk = pass && providedPass === pass;
   const keyOk = key && providedKey === key;
 
-  return passOk || keyOk;
+  return Boolean(passOk || keyOk);
+}
+
+function unauthorized() {
+  return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 }
 
 export async function GET(req: Request) {
@@ -42,5 +45,13 @@ export async function GET(req: Request) {
   });
 
   const data = await res.json();
-  return NextResponse.json(data, { status: res.status });
+
+  return NextResponse.json(data, {
+    status: res.status,
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      Pragma: "no-cache",
+      Expires: "0",
+    },
+  });
 }

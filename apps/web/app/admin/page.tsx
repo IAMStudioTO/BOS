@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Lead = {
   id: number;
@@ -15,402 +15,225 @@ type Lead = {
   created_at: string;
 };
 
-type Q = {
-  key: string;
-  title: string;
-  help?: string;
-};
+const ADMIN_PASS_STORAGE_KEY = "bos_admin_pass_v1";
 
-const QUESTIONS: Q[] = [
-  {
-    key: "percezione_attuale",
-    title: "1) Oggi, in una frase: cosa pensi che il tuo brand comunichi visivamente?",
-    help: "Serve a capire se la percezione attuale è allineata con ciò che vuoi trasmettere (premium, artigianale, tech, industriale, ecc.).",
-  },
-  {
-    key: "oggi_scelto_per",
-    title: "2) Oggi sei scelto per la tua identità o per comodità?",
-    help: "Se il cliente sceglie te ma non saprebbe spiegare perché, il design non sta facendo il suo lavoro.",
-  },
-  {
-    key: "logo_significato",
-    title: "3) Il tuo logo è un simbolo che rappresenta una visione o è solo un segno grafico?",
-    help: "Un simbolo racconta chi sei. Un segno riempie uno spazio.",
-  },
-  {
-    key: "sistema_visivo",
-    title: "4) Il tuo brand ha un sistema visivo coerente o è cresciuto “nel tempo”?",
-    help: "Quando non esiste un sistema, ogni nuovo materiale indebolisce l’identità invece di rafforzarla.",
-  },
-  {
-    key: "due_diligence_30s",
-    title: "5) Se un investitore guardasse il tuo brand per 30 secondi, lo percepirebbe all’altezza della tua ambizione?",
-    help: "Il design è la prima due diligence visiva.",
-  },
-  {
-    key: "anni_fermo",
-    title: "6) Da quanti anni non evolvi la tua identità visiva?",
-    help: "Il mercato evolve ogni giorno. Se il tuo brand è fermo, sta già arretrando.",
-  },
-  {
-    key: "link_sito",
-    title: "7) Link al sito/app (se esiste)",
-    help: "Ci serve per analizzare gerarchia, credibilità, chiarezza e coerenza visiva.",
-  },
-  {
-    key: "link_prodotto",
-    title: "8) Link a un prodotto/servizio chiave (pagina o scheda)",
-    help: "Serve a capire come il valore viene raccontato e “difeso” visivamente.",
-  },
-  {
-    key: "link_packaging",
-    title: "9) Link a packaging/foto prodotto (Drive/Notion/sito) se rilevante",
-    help: "Il packaging spesso è il primo contatto fisico col brand: o alza il valore o lo ammazza.",
-  },
-  {
-    key: "ux_vetrina_esperienza",
-    title: "10) Il tuo sito/app è progettato come esperienza o come vetrina?",
-    help: "Una vetrina mostra. Un’esperienza guida e convince.",
-  },
-  {
-    key: "percorso_guidato",
-    title: "11) Il percorso visivo guida l’utente o lo lascia decidere da solo?",
-    help: "Se l’utente deve capire da solo, stai già perdendo attenzione.",
-  },
-  {
-    key: "attrito_design",
-    title: "12) Il tuo design riduce attrito o lo crea?",
-    help: "Attrito = confusione, incoerenza, troppi stili, scarsa gerarchia. Ogni secondo di confusione è un passo verso l’abbandono.",
-  },
-  {
-    key: "allineamento_prezzo",
-    title: "13) Il tuo brand comunica il livello di prezzo che chiedi?",
-    help: "Se chiedi premium ma sembri standard, il cliente percepisce disallineamento.",
-  },
-  {
-    key: "giustificare_prezzo",
-    title: "14) Ti capita di dover giustificare il prezzo?",
-    help: "Quando il design è forte, il prezzo si difende da solo.",
-  },
-  {
-    key: "sembriamo_piccoli",
-    title: "15) Hai mai pensato: “Sembriamo più piccoli di quello che siamo”?",
-    help: "Molte aziende crescono economicamente ma restano visivamente piccole.",
-  },
-  {
-    key: "packaging_valore",
-    title: "16) Il packaging aumenta la percezione di valore o protegge solo il prodotto?",
-    help: "È un momento decisivo: può far scegliere te o un competitor.",
-  },
-  {
-    key: "riconoscibile_mercato",
-    title: "17) Il tuo prodotto è riconoscibile in mezzo ai competitor (scaffale/online)?",
-    help: "Se ti confondi, perdi prima ancora di essere scelto.",
-  },
-  {
-    key: "ambizione_3anni",
-    title: "18) L’identità attuale è allineata con dove vuoi portare il brand nei prossimi 3 anni?",
-    help: "L’ambizione senza struttura visiva è fragile.",
-  },
-  {
-    key: "scalabilita_internazionale",
-    title: "19) Se dovessi scalare o entrare in un mercato internazionale, il sistema visivo reggerebbe?",
-    help: "Un’identità forte è progettata per crescere. Una debole collassa sotto pressione.",
-  },
-  {
-    key: "se_nulla_cambia",
-    title: "20) Se nulla cambiasse nei prossimi 12 mesi, cosa accadrebbe al tuo brand?",
-    help: "La stagnazione non è neutrale: è regressione lenta.",
-  },
-];
-
-function safe(v: any) {
-  if (v === null || v === undefined) return "";
-  if (typeof v === "string") return v;
-  if (typeof v === "number" || typeof v === "boolean") return String(v);
+function formatDate(v: string) {
   try {
-    return JSON.stringify(v);
+    return new Date(v).toLocaleString();
   } catch {
-    return String(v);
+    return v;
   }
 }
 
 export default function AdminPage() {
   const [pass, setPass] = useState("");
-  const [authed, setAuthed] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [savedPass, setSavedPass] = useState<string>("");
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string>("");
 
   useEffect(() => {
-    const p = localStorage.getItem("bos_admin_pass") || "";
-    if (p) {
-      setPass(p);
-      setAuthed(true);
-    }
+    const p = localStorage.getItem(ADMIN_PASS_STORAGE_KEY) || "";
+    setSavedPass(p);
   }, []);
 
-  const total = leads.length;
+  const authHeaders = useMemo(() => {
+    const p = (savedPass || "").trim();
+    return p ? { "x-admin-pass": p } : {};
+  }, [savedPass]);
 
-  async function fetchLeads(pw: string) {
+  async function loadLeads() {
     setLoading(true);
-    setError(null);
+    setErr("");
+
     try {
-      const r = await fetch("/api/admin/leads", {
-        headers: { "x-admin-pass": pw },
+      // cache-busting: query param
+      const url = `/api/admin/leads?t=${Date.now()}`;
+      const res = await fetch(url, {
+        method: "GET",
+        headers: {
+          ...authHeaders,
+        },
         cache: "no-store",
       });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data?.error || "Fetch failed");
-      setLeads(data);
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setErr(data?.error || "Errore caricamento lead");
+        setLeads([]);
+      } else {
+        setLeads(Array.isArray(data) ? data : []);
+      }
     } catch (e: any) {
-      setError(e?.message || "Errore");
+      setErr(e?.message || "Errore rete");
       setLeads([]);
     } finally {
       setLoading(false);
     }
   }
 
-  async function doLogin() {
-    const pw = pass.trim();
-    if (!pw) return;
-    localStorage.setItem("bos_admin_pass", pw);
-    setAuthed(true);
-    await fetchLeads(pw);
-  }
-
-  async function doLogout() {
-    localStorage.removeItem("bos_admin_pass");
-    setAuthed(false);
-    setLeads([]);
-    setPass("");
-    setError(null);
-  }
-
-  async function downloadCsv() {
-    const pw = pass.trim();
-    const r = await fetch("/api/admin/leads-csv", {
-      headers: { "x-admin-pass": pw },
-      cache: "no-store",
-    });
-    if (!r.ok) {
-      const data = await r.json().catch(() => null);
-      alert(data?.error || "Forbidden");
-      return;
-    }
-    const blob = await r.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "bos-leads.csv";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
-
-  async function deleteLead(id: number) {
-    const pw = pass.trim();
-    if (!pw) return;
-
-    const ok = confirm(`Vuoi cancellare definitivamente il lead #${id}?`);
-    if (!ok) return;
-
-    setBusyId(id);
-    setError(null);
-    try {
-      const r = await fetch(`/api/admin/leads/${id}`, {
-        method: "DELETE",
-        headers: { "x-admin-pass": pw },
-        cache: "no-store",
-      });
-      const data = await r.json().catch(() => null);
-      if (!r.ok) throw new Error(data?.error || "Delete failed");
-      setLeads((prev) => prev.filter((x) => x.id !== id));
-    } catch (e: any) {
-      setError(e?.message || "Errore cancellazione");
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  const mapped = useMemo(() => {
-    return leads.map((l) => {
-      const a = l.raw_answers || {};
-      const answers = QUESTIONS.map((q) => ({
-        key: q.key,
-        title: q.title,
-        help: q.help,
-        value: safe(a[q.key]),
-      }));
-      // extra keys non mappate
-      const known = new Set(QUESTIONS.map((q) => q.key));
-      const extras = Object.keys(a)
-        .filter((k) => !known.has(k))
-        .sort()
-        .map((k) => ({ key: k, value: safe(a[k]) }));
-      return { lead: l, answers, extras };
-    });
-  }, [leads]);
-
   useEffect(() => {
-    if (authed && pass.trim()) fetchLeads(pass.trim());
+    if (!savedPass) return;
+
+    loadLeads();
+
+    // auto-refresh ogni 10s
+    const t = setInterval(() => {
+      loadLeads();
+    }, 10000);
+
+    return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed]);
+  }, [savedPass]);
 
-  if (!authed) {
-    return (
-      <main className="min-h-screen bg-white text-black flex items-center justify-center px-6">
-        <div className="w-full max-w-md border rounded-2xl p-6">
-          <h1 className="text-2xl font-bold mb-2">Admin</h1>
-          <p className="text-sm text-gray-600 mb-6">
-            Inserisci la password per visualizzare i lead e scaricare il CSV.
-          </p>
+  function onSavePass() {
+    const p = pass.trim();
+    localStorage.setItem(ADMIN_PASS_STORAGE_KEY, p);
+    setSavedPass(p);
+    setPass("");
+  }
 
-          <label className="text-sm font-medium">Password</label>
-          <input
-            type="password"
-            className="mt-2 w-full border rounded-xl px-4 py-3"
-            value={pass}
-            onChange={(e) => setPass(e.target.value)}
-            placeholder="••••••••"
-          />
-
-          <button
-            onClick={doLogin}
-            className="mt-4 w-full bg-black text-white rounded-xl py-3 font-medium hover:opacity-90"
-          >
-            Entra
-          </button>
-        </div>
-      </main>
-    );
+  function onLogout() {
+    localStorage.removeItem(ADMIN_PASS_STORAGE_KEY);
+    setSavedPass("");
+    setLeads([]);
+    setErr("");
   }
 
   return (
     <main className="min-h-screen bg-white text-black px-6 py-10">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="max-w-5xl mx-auto">
+        <div className="flex items-start justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold">Lead</h1>
-            <p className="text-sm text-gray-600">
-              Totale: <span className="font-medium">{total}</span>
+            <h1 className="text-3xl font-bold">Admin — Lead</h1>
+            <p className="text-gray-600 mt-2">
+              Vista lead + risposte. Aggiornamento automatico ogni 10 secondi.
             </p>
           </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <button
-              onClick={() => fetchLeads(pass.trim())}
-              className="border rounded-xl px-4 py-2 hover:bg-gray-50"
-              disabled={loading}
-            >
-              {loading ? "Aggiorno…" : "Aggiorna"}
-            </button>
-
-            <button
-              onClick={downloadCsv}
-              className="bg-black text-white rounded-xl px-4 py-2 font-medium hover:opacity-90"
-            >
-              Scarica CSV
-            </button>
-
-            <button
-              onClick={doLogout}
-              className="border rounded-xl px-4 py-2 hover:bg-gray-50"
-            >
-              Esci
-            </button>
-          </div>
+          {savedPass ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={loadLeads}
+                className="px-4 py-2 rounded-lg bg-black text-white hover:opacity-90"
+              >
+                Aggiorna
+              </button>
+              <button
+                onClick={onLogout}
+                className="px-4 py-2 rounded-lg border border-black/20 hover:bg-black/5"
+              >
+                Logout
+              </button>
+            </div>
+          ) : null}
         </div>
 
-        {error && (
-          <div className="mt-6 border border-red-200 bg-red-50 text-red-800 rounded-xl p-4 text-sm">
-            {error}
-          </div>
-        )}
+        {!savedPass ? (
+          <section className="border border-black/10 rounded-xl p-6 max-w-xl">
+            <h2 className="text-xl font-semibold mb-2">Accesso Admin</h2>
+            <p className="text-gray-600 mb-4">
+              Inserisci la password admin per visualizzare i lead.
+            </p>
 
-        <div className="mt-8 grid gap-6">
-          {mapped.map(({ lead, answers, extras }) => (
-            <div key={lead.id} className="border rounded-2xl p-6">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="text-sm text-gray-500">
-                    #{lead.id} • {new Date(lead.created_at).toLocaleString()}
+            <div className="flex gap-2">
+              <input
+                type="password"
+                value={pass}
+                onChange={(e) => setPass(e.target.value)}
+                placeholder="Admin password"
+                className="flex-1 px-4 py-3 rounded-lg border border-black/15 outline-none focus:ring-2 focus:ring-black/20"
+              />
+              <button
+                onClick={onSavePass}
+                className="px-4 py-3 rounded-lg bg-black text-white hover:opacity-90"
+              >
+                Entra
+              </button>
+            </div>
+          </section>
+        ) : (
+          <section className="space-y-4">
+            {err ? (
+              <div className="p-4 rounded-xl border border-red-200 bg-red-50 text-red-700">
+                {err}
+              </div>
+            ) : null}
+
+            <div className="text-sm text-gray-600">
+              {loading ? "Caricamento..." : `Lead: ${leads.length}`}
+            </div>
+
+            <div className="grid gap-4">
+              {leads.map((l) => (
+                <div
+                  key={l.id}
+                  className="border border-black/10 rounded-xl p-5"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="font-semibold">
+                      #{l.id} — {l.email}
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      {formatDate(l.created_at)}
+                    </div>
                   </div>
-                  <div className="text-lg font-semibold">{lead.email}</div>
-                  <div className="text-sm text-gray-600">
-                    Settore: <span className="font-medium">{lead.settore}</span>
-                    {lead.sito_url ? (
-                      <>
-                        {" "}
-                        • Sito:{" "}
+
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-gray-500">Settore:</span>{" "}
+                      <span className="font-medium">{l.settore}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Sito:</span>{" "}
+                      {l.sito_url ? (
                         <a
-                          className="underline"
-                          href={lead.sito_url}
+                          className="font-medium underline"
+                          href={l.sito_url}
                           target="_blank"
                           rel="noreferrer"
                         >
-                          {lead.sito_url}
+                          {l.sito_url}
                         </a>
-                      </>
-                    ) : null}
+                      ) : (
+                        <span className="font-medium">—</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Score:</span>{" "}
+                      <span className="font-medium">{l.score}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Livello:</span>{" "}
+                      <span className="font-medium">{l.livello}</span>
+                    </div>
                   </div>
-                  <div className="text-sm text-gray-600 mt-1">
-                    Score: <span className="font-medium">{lead.score}</span> •
-                    Livello: <span className="font-medium">{lead.livello}</span>
+
+                  <div className="mt-4">
+                    <div className="text-sm font-semibold mb-2">
+                      Risposte (raw)
+                    </div>
+
+                    {l.raw_answers ? (
+                      <pre className="text-xs bg-black/5 border border-black/10 rounded-lg p-3 overflow-auto">
+{JSON.stringify(l.raw_answers, null, 2)}
+                      </pre>
+                    ) : (
+                      <div className="text-sm text-gray-500">Nessuna risposta salvata.</div>
+                    )}
                   </div>
                 </div>
+              ))}
 
-                <button
-                  onClick={() => deleteLead(lead.id)}
-                  disabled={busyId === lead.id}
-                  className="mt-2 sm:mt-0 border border-red-300 text-red-700 rounded-xl px-4 py-2 hover:bg-red-50 disabled:opacity-50"
-                >
-                  {busyId === lead.id ? "Elimino…" : "Elimina"}
-                </button>
-              </div>
-
-              <div className="mt-6 grid gap-4">
-                {answers.map((a) => (
-                  <div key={`${lead.id}_${a.key}`} className="border rounded-xl p-4">
-                    <div className="text-sm font-semibold">{a.title}</div>
-                    {a.help ? (
-                      <div className="text-xs text-gray-500 mt-1">{a.help}</div>
-                    ) : null}
-                    <div className="mt-2 text-sm whitespace-pre-wrap">
-                      {a.value ? a.value : <span className="text-gray-400">—</span>}
-                    </div>
-                  </div>
-                ))}
-
-                {extras.length > 0 && (
-                  <div className="border rounded-xl p-4 bg-gray-50">
-                    <div className="text-sm font-semibold">
-                      Risposte extra (chiavi non mappate)
-                    </div>
-                    <div className="mt-3 grid gap-2 text-sm">
-                      {extras.map((x) => (
-                        <div key={`${lead.id}_extra_${x.key}`}>
-                          <span className="font-mono text-xs bg-white border rounded px-2 py-1 mr-2">
-                            {x.key}
-                          </span>
-                          <span className="whitespace-pre-wrap">{x.value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
+              {leads.length === 0 && !loading ? (
+                <div className="text-gray-600">
+                  Nessun lead da mostrare.
+                </div>
+              ) : null}
             </div>
-          ))}
-
-          {!loading && mapped.length === 0 && (
-            <div className="border rounded-2xl p-6 text-sm text-gray-600">
-              Nessun lead trovato.
-            </div>
-          )}
-        </div>
+          </section>
+        )}
       </div>
     </main>
   );
