@@ -33,7 +33,8 @@ const questions: Question[] = [
     id: "logo",
     question:
       "Il tuo logo è un simbolo che rappresenta una visione o è solo un segno grafico?",
-    description: "Un simbolo racconta chi sei. Un segno riempie uno spazio.",
+    description:
+      "Un simbolo racconta chi sei anche senza spiegazioni. Un segno è spesso decorazione.",
     type: "radio",
     options: [
       { label: "Simbolo strategico", value: "strategico" },
@@ -44,9 +45,9 @@ const questions: Question[] = [
   {
     id: "sistema_visivo",
     question:
-      "Esiste un sistema visivo coerente (colori, font, layout, regole)?",
+      "Esiste un sistema visivo coerente (colori, font, layout, regole d’uso)?",
     description:
-      "Quando non esiste un sistema, ogni nuovo materiale indebolisce l’identità invece di rafforzarla.",
+      "Quando non esiste un sistema, ogni nuovo materiale aggiunge rumore e indebolisce l’identità.",
     type: "radio",
     options: [
       { label: "Sì, definito", value: "si" },
@@ -55,33 +56,76 @@ const questions: Question[] = [
     ],
   },
   {
-    id: "prezzo",
-    question: "Il tuo brand comunica il livello di prezzo che chiedi?",
+    id: "coerenza_touchpoint",
+    question:
+      "Quanto è coerente il brand tra sito, social, presentazioni, preventivi, materiali stampati?",
     description:
-      "Se chiedi premium ma sembri standard, il cliente percepisce disallineamento.",
+      "Se ogni touchpoint sembra “un’azienda diversa”, il cliente sente instabilità (anche se non lo dice).",
+    type: "radio",
+    options: [
+      { label: "Molto coerente", value: "alta" },
+      { label: "Abbastanza coerente", value: "media" },
+      { label: "Poco coerente", value: "bassa" },
+      { label: "È disordinato", value: "disordinato" },
+    ],
+  },
+  {
+    id: "tono_voce",
+    question: "Il tuo Tone of Voice è definito e coerente?",
+    description:
+      "Tone of Voice = il modo in cui il brand parla. Se cambia ogni volta, il brand perde personalità e autorevolezza.",
+    type: "radio",
+    options: [
+      { label: "Sì, definito e coerente", value: "si" },
+      { label: "Parziale", value: "parziale" },
+      { label: "No", value: "no" },
+      { label: "Non saprei", value: "non_so" },
+    ],
+  },
+  {
+    id: "prezzo",
+    question: "Il tuo design comunica il livello di prezzo che chiedi?",
+    description:
+      "Se chiedi premium ma sembri standard, il cliente percepisce frizione e inizia a negoziare.",
     type: "radio",
     options: [
       { label: "Sì", value: "si" },
-      { label: "In parte", value: "parziale" },
+      { label: "Solo in parte", value: "parziale" },
       { label: "No", value: "no" },
     ],
   },
   {
     id: "esperienza",
     question:
-      "Il tuo sito/app è progettato come esperienza o come semplice vetrina?",
-    description: "Una vetrina mostra. Un’esperienza guida e convince.",
+      "Il sito/app è progettato come esperienza (guida) o come vetrina (mostra)?",
+    description:
+      "Una vetrina informa. Un’esperienza accompagna e riduce dubbi. La differenza si vede nei risultati.",
     type: "radio",
     options: [
       { label: "Esperienza progettata", value: "esperienza" },
-      { label: "Vetrina", value: "vetrina" },
+      { label: "Più vetrina che esperienza", value: "vetrina" },
+      { label: "Non saprei", value: "non_so" },
+    ],
+  },
+  {
+    id: "gerarchia",
+    question:
+      "Nelle tue pagine / materiali, la gerarchia visiva è chiara?",
+    description:
+      "Gerarchia = capire subito cosa conta. Se l’occhio non capisce, la mente si stanca e scappa.",
+    type: "radio",
+    options: [
+      { label: "Chiara", value: "chiara" },
+      { label: "Abbastanza", value: "media" },
+      { label: "Confusa", value: "confusa" },
       { label: "Non saprei", value: "non_so" },
     ],
   },
   {
     id: "attrito",
-    question: "Il tuo design riduce attrito o lo crea?",
-    description: "Ogni secondo di confusione è un passo verso l’abbandono.",
+    question: "Il design riduce attrito o lo crea?",
+    description:
+      "Attrito = confusione, incoerenza, troppe scelte, scarsa leggibilità. Ogni micro-attrito è una micro-perdita.",
     type: "radio",
     options: [
       { label: "Riduce attrito", value: "riduce" },
@@ -90,10 +134,52 @@ const questions: Question[] = [
     ],
   },
   {
+    id: "credibilita",
+    question:
+      "Hai elementi visivi di credibilità forti (case study, prove, numeri, certificazioni, recensioni)?",
+    description:
+      "Se non si vede una prova, il cliente “riempie i vuoti” con dubbi. E i dubbi costano conversioni.",
+    type: "radio",
+    options: [
+      { label: "Sì, ben visibili", value: "si" },
+      { label: "Qualcosa c’è ma è debole", value: "debole" },
+      { label: "Quasi nulla", value: "no" },
+    ],
+  },
+  {
+    id: "packaging_valore",
+    question:
+      "Packaging/prodotto: aumenta la percezione di valore o è solo funzionale?",
+    description:
+      "Il packaging è spesso il primo contatto fisico: se è “neutro”, stai regalando valore al competitor.",
+    type: "radio",
+    options: [
+      { label: "Aumenta valore", value: "valore" },
+      { label: "Neutro", value: "neutro" },
+      { label: "Solo funzionale", value: "funzionale" },
+      { label: "Non applicabile", value: "na" },
+    ],
+  },
+  {
+    id: "riconoscibile_mercato",
+    question:
+      "In mezzo ai competitor (online o a scaffale), saresti riconoscibile al volo?",
+    description:
+      "Se ti confondi, perdi prima ancora di essere valutato. È un problema di forma, non di qualità del prodotto.",
+    type: "radio",
+    options: [
+      { label: "Sì, subito", value: "si" },
+      { label: "Forse", value: "forse" },
+      { label: "No", value: "no" },
+      { label: "Non applicabile", value: "na" },
+    ],
+  },
+  {
     id: "ambizione",
     question:
-      "L’identità attuale è allineata con dove vuoi portare il brand nei prossimi 3 anni?",
-    description: "L’ambizione senza struttura visiva è fragile.",
+      "L’identità attuale è allineata con dove vuoi portare il brand nei prossimi 24–36 mesi?",
+    description:
+      "Se l’ambizione cresce ma l’identità resta piccola, inizi a sembrare “meno” di quello che sei.",
     type: "radio",
     options: [
       { label: "Sì", value: "si" },
@@ -102,10 +188,32 @@ const questions: Question[] = [
     ],
   },
   {
+    id: "scalabilita",
+    question:
+      "Se domani dovessi scalare (nuovi prodotti, nuovi mercati), il tuo sistema visivo reggerebbe?",
+    description:
+      "Un sistema forte cresce con te. Un sistema debole collassa e ti costringe a rifare tutto quando sei sotto pressione.",
+    type: "radio",
+    options: [
+      { label: "Sì, regge", value: "si" },
+      { label: "Ho dubbi", value: "dubbi" },
+      { label: "No", value: "no" },
+    ],
+  },
+  {
+    id: "frustrazione",
+    question:
+      "Qual è la tua frustrazione principale oggi su brand/design/comunicazione?",
+    description:
+      "Scrivilo senza filtri: spesso il problema vero è quello che ti fa perdere tempo ogni settimana.",
+    type: "text",
+  },
+  {
     id: "materiali",
     question:
-      "Carica logo, packaging, screenshot sito/app o materiali grafici.",
-    description: "L’identità non è ciò che pensi di avere. È ciò che si vede.",
+      "Carica logo, packaging, screenshot sito/app o materiali grafici (se li hai).",
+    description:
+      "Qui possiamo vedere subito se il brand è coerente, se comunica valore e dove sta perdendo credibilità.",
     type: "file",
   },
 ];
@@ -113,20 +221,52 @@ const questions: Question[] = [
 function calcScore(answers: Record<string, any>) {
   let score = 100;
 
+  // Riconoscibilità
   if (answers.riconoscibilita === "bassa") score -= 15;
+  if (answers.riconoscibilita === "non_so") score -= 5;
+
+  // Logo / sistema
   if (answers.logo === "grafico") score -= 10;
   if (answers.sistema_visivo === "no") score -= 15;
+  if (answers.sistema_visivo === "parziale") score -= 6;
+
+  // Coerenza
+  if (answers.coerenza_touchpoint === "disordinato") score -= 15;
+  if (answers.coerenza_touchpoint === "bassa") score -= 10;
+
+  // Tone of Voice
+  if (answers.tono_voce === "no") score -= 10;
+  if (answers.tono_voce === "parziale") score -= 5;
+
+  // Prezzo percepito
   if (answers.prezzo === "no") score -= 10;
+  if (answers.prezzo === "parziale") score -= 5;
+
+  // UX / Gerarchia / Attrito
+  if (answers.esperienza === "vetrina") score -= 8;
+  if (answers.gerarchia === "confusa") score -= 10;
   if (answers.attrito === "crea") score -= 15;
+
+  // Credibilità
+  if (answers.credibilita === "no") score -= 12;
+  if (answers.credibilita === "debole") score -= 6;
+
+  // Packaging / riconoscibilità
+  if (answers.packaging_valore === "funzionale") score -= 8;
+  if (answers.riconoscibile_mercato === "no") score -= 10;
+
+  // Ambizione / scalabilità
   if (answers.ambizione === "no") score -= 10;
+  if (answers.scalabilita === "no") score -= 10;
+  if (answers.scalabilita === "dubbi") score -= 5;
 
   return Math.max(score, 0);
 }
 
 function levelFromScore(score: number) {
-  if (score >= 80) return "Strutturato";
-  if (score >= 60) return "In consolidamento";
-  if (score >= 40) return "Fragile";
+  if (score >= 85) return "Strutturato";
+  if (score >= 70) return "In consolidamento";
+  if (score >= 50) return "Fragile";
   return "Critico";
 }
 
@@ -144,22 +284,21 @@ export default function DiagnosiPage() {
   const currentValue = answers[current.id];
 
   const progressPct = useMemo(() => {
-    // progress “percepito”: step attuale incluso
     const v = ((step + 1) / totalSteps) * 100;
     return Math.max(0, Math.min(100, v));
   }, [step, totalSteps]);
 
   const isAnswered = useMemo(() => {
-    if (!current) return false;
     const v = currentValue;
 
     if (current.type === "radio") return typeof v === "string" && v.length > 0;
-    if (current.type === "text") return typeof v === "string" && v.trim().length > 1;
-    if (current.type === "number") return v !== undefined && v !== null && String(v).length > 0;
+    if (current.type === "text") return typeof v === "string" && v.trim().length > 2;
+    if (current.type === "number")
+      return v !== undefined && v !== null && String(v).length > 0;
     if (current.type === "file") return v instanceof FileList ? v.length > 0 : false;
 
     return false;
-  }, [current, currentValue]);
+  }, [current.type, currentValue]);
 
   function setAnswer(value: any) {
     setAnswers((prev) => ({ ...prev, [current.id]: value }));
@@ -187,13 +326,9 @@ export default function DiagnosiPage() {
       return;
     }
 
-    // MVP: qui puoi chiamare la tua API /diagnostic (Render) come già fai nel progetto reale.
-    // In questa versione lasciamo solo UX (invio “simulato”) per non rompere la tua integrazione.
     setSending(true);
     try {
-      // Se vuoi attaccarlo davvero: fai fetch al tuo endpoint API.
-      // await fetch("...", { method: "POST", ... });
-
+      // Qui, se vuoi, colleghiamo la POST alla tua API Render (già presente nel progetto).
       setSendMsg("Perfetto. Ti stiamo inviando il report via email.");
     } catch {
       setSendMsg("Errore durante l’invio. Riprova tra poco.");
@@ -212,7 +347,7 @@ export default function DiagnosiPage() {
           <div className="mb-6">
             <h1 className="text-3xl font-bold">Risultato Diagnosi</h1>
             <p className="text-gray-600 mt-2">
-              Report sintetico + PDF completo via email.
+              Sintesi + PDF completo (priorità design, coerenza, credibilità, UX).
             </p>
           </div>
 
@@ -229,14 +364,11 @@ export default function DiagnosiPage() {
             </div>
 
             <div className="mt-4 h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-black"
-                style={{ width: `${score}%` }}
-              />
+              <div className="h-full bg-black" style={{ width: `${score}%` }} />
             </div>
 
             <p className="text-sm text-gray-500 mt-4">
-              Ricevi il PDF con priorità di intervento e raccomandazioni design.
+              Inserisci la tua email per ricevere il report PDF personalizzato.
             </p>
           </div>
 
@@ -262,9 +394,7 @@ export default function DiagnosiPage() {
               {sending ? "Invio in corso..." : "Ricevi il report"}
             </button>
 
-            {sendMsg && (
-              <p className="text-sm text-gray-600 mt-3">{sendMsg}</p>
-            )}
+            {sendMsg && <p className="text-sm text-gray-600 mt-3">{sendMsg}</p>}
           </div>
 
           <div className="mt-6 text-center">
@@ -297,7 +427,7 @@ export default function DiagnosiPage() {
           </div>
 
           <p className="text-sm text-gray-500 mt-3">
-            Risposte rapide. Output pragmatico. 2 minuti.
+            16 domande. Risposte rapide. Output pragmatico.
           </p>
         </div>
 
@@ -335,11 +465,10 @@ export default function DiagnosiPage() {
           )}
 
           {current.type === "text" && (
-            <input
-              type="text"
+            <textarea
               value={typeof currentValue === "string" ? currentValue : ""}
               onChange={(e) => setAnswer(e.target.value)}
-              className="border px-4 py-3 rounded-xl w-full"
+              className="border px-4 py-3 rounded-xl w-full min-h-[120px]"
               placeholder="Scrivi qui…"
             />
           )}
