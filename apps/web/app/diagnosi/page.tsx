@@ -9,7 +9,6 @@ type Question = {
   description?: string;
   type: "radio" | "text" | "file";
   options?: Option[];
-  placeholder?: string;
   required?: boolean;
 };
 
@@ -19,50 +18,146 @@ const API_BASE =
 const questions: Question[] = [
   {
     id: "sitoUrl",
-    question: "Sito o link principale (anche Instagram / marketplace)",
+    question: "Inserisci il link principale (sito / landing / e-commerce / IG)",
     description:
-      "Ci serve per leggere credibilità, chiarezza e coerenza tra touchpoint.",
+      "Analizziamo gerarchia visiva, credibilità, coerenza e qualità dell’esperienza.",
     type: "text",
+    required: true,
   },
   {
     id: "settore",
-    question: "Settore / categoria",
+    question: "Settore e fascia di mercato",
     description:
-      "Serve per confrontare il tuo brand con pattern e competitor del settore.",
+      "Serve per confrontare il tuo brand con competitor reali e benchmark di categoria.",
     type: "text",
     required: true,
   },
   {
-    id: "riconoscibilita",
-    question: "Quanto è riconoscibile oggi il tuo brand?",
+    id: "logoUpload",
+    question: "Carica il tuo logo (PNG / SVG / PDF)",
     description:
-      "Se togliessimo il logo, sarebbe comunque identificabile?",
+      "Il logo è il primo filtro di credibilità. Lo analizziamo in termini di struttura, coerenza e scalabilità.",
+    type: "file",
+    required: false,
+  },
+  {
+    id: "packagingUpload",
+    question: "Carica immagini del packaging o del prodotto (se presenti)",
+    description:
+      "Il packaging è percezione di valore. Anche una foto fatta col telefono va bene.",
+    type: "file",
+  },
+  {
+    id: "materialiUpload",
+    question: "Carica presentazioni, brochure, cataloghi o screenshot social",
+    description:
+      "Servono per valutare coerenza e maturità del sistema visivo.",
+    type: "file",
+  },
+  {
+    id: "riconoscibilita",
+    question: "Il tuo brand è immediatamente riconoscibile?",
+    description:
+      "Se togliessimo il logo, si capirebbe che siete voi?",
     type: "radio",
     required: true,
     options: [
-      { label: "Molto", value: "alta" },
+      { label: "Sì, molto", value: "alta" },
       { label: "Abbastanza", value: "media" },
-      { label: "Poco", value: "bassa" },
+      { label: "No", value: "bassa" },
     ],
   },
   {
-    id: "logo",
-    question: "Il logo comunica identità o è solo un segno grafico?",
+    id: "sistemaVisivo",
+    question: "Esiste un sistema visivo strutturato (colori, font, regole)?",
     description:
-      "Un logo forte sostiene posizionamento e prezzo.",
+      "Senza sistema, ogni nuovo materiale abbassa la percezione di solidità.",
     type: "radio",
     required: true,
     options: [
-      { label: "Comunica identità", value: "identita" },
-      { label: "Solo segno grafico", value: "grafico" },
+      { label: "Sì, definito e coerente", value: "si" },
+      { label: "Parziale", value: "parziale" },
+      { label: "No", value: "no" },
+    ],
+  },
+  {
+    id: "premium",
+    question: "Il design supporta il prezzo che chiedi?",
+    description:
+      "Se chiedi premium ma sembri standard, il cliente negozia.",
+    type: "radio",
+    required: true,
+    options: [
+      { label: "Sì", value: "si" },
+      { label: "In parte", value: "parziale" },
+      { label: "No", value: "no" },
+    ],
+  },
+  {
+    id: "ux",
+    question: "Il sito guida l’utente o mostra solo contenuti?",
+    description:
+      "UX significa progettare il percorso decisionale, non solo layout.",
+    type: "radio",
+    required: true,
+    options: [
+      { label: "Guida decisionale", value: "guida" },
+      { label: "Più vetrina", value: "vetrina" },
       { label: "Non saprei", value: "non_so" },
     ],
   },
   {
-    id: "dolore",
-    question: "Qual è oggi il problema più costoso lato immagine o design?",
+    id: "coerenzaTouchpoint",
+    question: "Sito, social, preventivi e materiali parlano la stessa lingua?",
     description:
-      "Qui vogliamo il punto che ti fa perdere vendite o autorevolezza.",
+      "Se ogni touchpoint sembra un’azienda diversa, la fiducia crolla.",
+    type: "radio",
+    required: true,
+    options: [
+      { label: "Molto coerenti", value: "alta" },
+      { label: "Abbastanza", value: "media" },
+      { label: "Incoerenti", value: "bassa" },
+    ],
+  },
+  {
+    id: "distinzione",
+    question: "Rispetto ai competitor sembri diverso o intercambiabile?",
+    description:
+      "Se sembri uguale, il cliente sceglie sul prezzo.",
+    type: "radio",
+    required: true,
+    options: [
+      { label: "Molto diverso", value: "diverso" },
+      { label: "Un po’ diverso", value: "parziale" },
+      { label: "Uguale agli altri", value: "uguale" },
+    ],
+  },
+  {
+    id: "scalabilita",
+    question: "Se l’azienda cresce, il sistema visivo regge?",
+    description:
+      "Un brand forte è scalabile. Uno debole si rompe quando serve forza.",
+    type: "radio",
+    required: true,
+    options: [
+      { label: "Sì", value: "si" },
+      { label: "Ho dubbi", value: "dubbi" },
+      { label: "No", value: "no" },
+    ],
+  },
+  {
+    id: "problema",
+    question: "Qual è il problema più costoso lato design oggi?",
+    description:
+      "Vendite perse? Prezzi negoziati? Mancanza di credibilità?",
+    type: "text",
+    required: true,
+  },
+  {
+    id: "obiettivo",
+    question: "Se potessi sistemare una cosa nei prossimi 90 giorni, quale sarebbe?",
+    description:
+      "Questo ci dice la priorità reale di intervento.",
     type: "text",
     required: true,
   },
@@ -83,9 +178,10 @@ export default function DiagnosiPage() {
   const current = questions[step];
   const currentValue = answers[current.id];
 
-  const progressPct = useMemo(() => {
-    return ((step + 1) / totalSteps) * 100;
-  }, [step]);
+  const progressPct = useMemo(
+    () => ((step + 1) / totalSteps) * 100,
+    [step]
+  );
 
   function setAnswer(value: any) {
     setAnswers((prev) => ({ ...prev, [current.id]: value }));
@@ -101,45 +197,36 @@ export default function DiagnosiPage() {
   }
 
   async function submitEmail() {
-    setDoneMsg("");
-
     if (!email.includes("@")) {
       setDoneMsg("Inserisci una email valida.");
       return;
     }
-
     if (!consent) {
-      setDoneMsg(
-        "Devi confermare il consenso al trattamento dei dati per proseguire."
-      );
+      setDoneMsg("Devi confermare il consenso per proseguire.");
       return;
     }
 
     setSending(true);
 
-    try {
-      await fetch(`${API_BASE}/diagnostic`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email,
-          sitoUrl: answers.sitoUrl || "",
-          settore: answers.settore || "Non specificato",
-          ticketMedio: 0,
-          leadMese: 0,
-          convRate: null,
-          rawAnswers: answers,
-        }),
-      });
+    await fetch(`${API_BASE}/diagnostic`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email,
+        sitoUrl: answers.sitoUrl || "",
+        settore: answers.settore || "",
+        ticketMedio: 0,
+        leadMese: 0,
+        convRate: null,
+        rawAnswers: answers,
+      }),
+    });
 
-      setDoneMsg(
-        "Analisi avviata. Riceverai il report il prima possibile."
-      );
-    } catch {
-      setDoneMsg("Errore durante l’invio. Riprova.");
-    } finally {
-      setSending(false);
-    }
+    setDoneMsg(
+      "Analisi avviata. Riceverai il report il prima possibile."
+    );
+
+    setSending(false);
   }
 
   if (gate) {
@@ -166,8 +253,7 @@ export default function DiagnosiPage() {
               className="mt-1 h-4 w-4"
             />
             <label className="text-sm text-gray-600 leading-6">
-              Confermo il consenso al trattamento dei dati ai fini
-              dell’analisi e della consegna del report.
+              Confermo il consenso al trattamento dei dati ai fini dell’analisi.
             </label>
           </div>
 
@@ -228,6 +314,19 @@ export default function DiagnosiPage() {
           <input
             value={currentValue || ""}
             onChange={(e) => setAnswer(e.target.value)}
+            className="border px-4 py-3 rounded-xl w-full"
+          />
+        )}
+
+        {current.type === "file" && (
+          <input
+            type="file"
+            multiple
+            onChange={(e) =>
+              setAnswer(
+                Array.from(e.target.files || []).map((f) => f.name)
+              )
+            }
             className="border px-4 py-3 rounded-xl w-full"
           />
         )}
