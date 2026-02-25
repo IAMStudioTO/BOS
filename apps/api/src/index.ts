@@ -6,9 +6,7 @@ import pg from "pg";
 const app = express();
 
 /**
- * CORS: consenti SOLO i domini del frontend
- * Imposta su Render:
- * CORS_ORIGINS="https://bos-delta.vercel.app,https://bos-delta-xxx.vercel.app"
+ * CORS
  */
 const CORS_ORIGINS = (process.env.CORS_ORIGINS || "")
   .split(",")
@@ -16,8 +14,8 @@ const CORS_ORIGINS = (process.env.CORS_ORIGINS || "")
   .filter(Boolean);
 
 function isAllowedOrigin(origin?: string) {
-  if (!origin) return true; // curl/server-to-server
-  if (CORS_ORIGINS.length === 0) return true; // fallback (non consigliato in prod)
+  if (!origin) return true;
+  if (CORS_ORIGINS.length === 0) return true;
   return CORS_ORIGINS.includes(origin);
 }
 
@@ -36,15 +34,10 @@ app.options("*", cors());
 app.use(express.json({ limit: "4mb" }));
 
 const PORT = Number(process.env.PORT || 8080);
-
-/**
- * Admin key per endpoint /admin/*
- * (su Render) ADMIN_API_KEY=...
- */
 const ADMIN_API_KEY = (process.env.ADMIN_API_KEY || "").trim();
 
 /**
- * DB (Render Postgres)
+ * DATABASE
  */
 const { Pool } = pg;
 
@@ -77,17 +70,23 @@ async function ensureDb() {
 
 function requireAdmin(req: express.Request, res: express.Response) {
   const key = (req.header("x-admin-key") || "").trim();
+
   if (!ADMIN_API_KEY) {
-    return res
-      .status(500)
-      .json({ ok: false, error: "ADMIN_API_KEY not configured" });
+    res.status(500).json({ ok: false, error: "ADMIN_API_KEY not configured" });
+    return true;
   }
+
   if (key !== ADMIN_API_KEY) {
-    return res.status(403).json({ ok: false, error: "Forbidden" });
+    res.status(403).json({ ok: false, error: "Forbidden" });
+    return true;
   }
-  return null;
+
+  return false;
 }
 
+/**
+ * SCHEMA
+ */
 const DiagnosticSchema = z.object({
   email: z.string().email(),
   sitoUrl: z.string().optional().or(z.literal("")),
@@ -100,23 +99,14 @@ const DiagnosticSchema = z.object({
 
 function scoreAndPriorities(input: z.infer<typeof DiagnosticSchema>) {
   const a = (input.rawAnswers || {}) as Record<string, any>;
-
   let score = 100;
 
-  // MVP scoring (puoi evolverlo)
   if (a.riconoscibilita === "bassa") score -= 15;
   if (a.logo === "grafico") score -= 10;
   if (a.sistema_visivo === "no") score -= 15;
   if (a.coerenza_touchpoint === "disordinato") score -= 15;
   if (a.tono_voce === "no") score -= 10;
-  if (a.prezzo === "no") score -= 10;
-  if (a.gerarchia === "confusa") score -= 10;
   if (a.attrito === "crea") score -= 15;
-  if (a.credibilita === "no") score -= 12;
-  if (a.packaging_valore === "funzionale") score -= 8;
-  if (a.riconoscibile_mercato === "no") score -= 10;
-  if (a.ambizione === "no") score -= 10;
-  if (a.scalabilita === "no") score -= 10;
 
   score = Math.max(0, score);
 
@@ -129,13 +119,11 @@ function scoreAndPriorities(input: z.infer<typeof DiagnosticSchema>) {
       ? "Fragile"
       : "Critico";
 
-  const perdita_mensile = 0;
-
-  return { score, livello, perdita_mensile };
+  return { score, livello, perdita_mensile: 0 };
 }
 
 /**
- * HEALTH (con versione deploy)
+ * HEALTH
  */
 app.get("/health", (_req, res) => {
   res.json({
@@ -148,43 +136,25 @@ app.get("/health", (_req, res) => {
 
 /**
  * DIAGNOSTIC
- * ✅ salva lead + raw answers
- * ✅ NO PDF / NO EMAIL
  */
 app.post("/diagnostic", async (req, res) => {
   try {
-    // --- DEBUG LOGS (chiave del problema) ---
-    const body = req.body || {};
-    const bodyKeys = Object.keys(body);
-    const ra = body?.rawAnswers;
-    const rawAnswersType = Array.isArray(ra) ? "array" : typeof ra;
-    const rawAnswersKeys =
-      ra && typeof ra === "object" && !Array.isArray(ra) ? Object.keys(ra) : [];
-
-    console.log("[bos-api] /diagnostic received keys:", bodyKeys);
-    console.log("[bos-api] /diagnostic rawAnswers type:", rawAnswersType);
-    console.log("[bos-api] /diagnostic rawAnswers keys:", rawAnswersKeys);
-
-    const input = DiagnosticSchema.parse(body);
-
-    const parsedRa = input.rawAnswers || {};
-    console.log(
-      "[bos-api] /diagnostic parsed rawAnswers keys:",
-      Object.keys(parsedRa)
-    );
-    // --- END DEBUG LOGS ---
+    const input = DiagnosticSchema.parse(req.body);
 
     const request_id = `req_${Date.now()}_${Math.random()
       .toString(16)
       .slice(2)}`;
 
-    const { score, livello, perdita_mensile } = scoreAndPriorities(input);
-    const raw_answers = input.rawAnswers ? input.rawAnswers : null;
+    const { score, livello, perdita_mensile } =
+      scoreAndPriorities(input);
+
+    const raw_answers = input.rawAnswers ?? null;
 
     await pool.query(
       `
-      INSERT INTO leads (request_id, email, settore, sito_url, score, livello, perdita_mensile, raw_answers)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO leads 
+      (request_id, email, settore, sito_url, score, livello, perdita_mensile, raw_answers)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
       `,
       [
         request_id,
@@ -204,7 +174,6 @@ app.post("/diagnostic", async (req, res) => {
       message: "Analisi avviata. Riceverai il report il prima possibile.",
     });
   } catch (err: any) {
-    console.error("[bos-api] diagnostic failed", err?.message || err);
     if (err?.name === "ZodError") {
       return res.status(400).json({ ok: false, error: "Invalid payload" });
     }
@@ -213,11 +182,10 @@ app.post("/diagnostic", async (req, res) => {
 });
 
 /**
- * ADMIN: JSON leads
+ * ADMIN JSON (NON MODIFICATO)
  */
 app.get("/admin/leads", async (req, res) => {
-  const forbidden = requireAdmin(req, res);
-  if (forbidden) return;
+  if (requireAdmin(req, res)) return;
 
   const { rows } = await pool.query(
     `SELECT id, request_id, email, settore, sito_url, score, livello, perdita_mensile, raw_answers, created_at
@@ -225,15 +193,34 @@ app.get("/admin/leads", async (req, res) => {
      ORDER BY created_at DESC
      LIMIT 500`
   );
+
   res.json(rows);
 });
 
 /**
- * ADMIN: CSV export
+ * ADMIN DELETE (NON MODIFICATO)
+ */
+app.delete("/admin/leads/:id", async (req, res) => {
+  if (requireAdmin(req, res)) return;
+
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ ok: false });
+  }
+
+  const r = await pool.query(
+    `DELETE FROM leads WHERE id = $1`,
+    [id]
+  );
+
+  res.json({ ok: true, deleted: r.rowCount || 0 });
+});
+
+/**
+ * ADMIN CSV (OTTIMIZZATO OUTPUT)
  */
 app.get("/admin/leads.csv", async (req, res) => {
-  const forbidden = requireAdmin(req, res);
-  if (forbidden) return;
+  if (requireAdmin(req, res)) return;
 
   const { rows } = await pool.query(
     `SELECT id, request_id, email, settore, sito_url, score, livello, perdita_mensile, raw_answers, created_at
@@ -242,7 +229,7 @@ app.get("/admin/leads.csv", async (req, res) => {
      LIMIT 500`
   );
 
-  const header = [
+  const baseHeader = [
     "id",
     "request_id",
     "email",
@@ -251,48 +238,61 @@ app.get("/admin/leads.csv", async (req, res) => {
     "score",
     "livello",
     "perdita_mensile",
-    "raw_answers",
     "created_at",
   ];
 
+  const rawKeys = new Set<string>();
+  rows.forEach((r: any) => {
+    if (r.raw_answers && typeof r.raw_answers === "object") {
+      Object.keys(r.raw_answers).forEach((k) =>
+        rawKeys.add(k)
+      );
+    }
+  });
+
+  const header = [...baseHeader, ...Array.from(rawKeys).sort()];
+
   const escapeCsv = (v: any) => {
     const s = String(v ?? "");
-    const needs = /[",\n]/.test(s);
     const out = s.replace(/"/g, '""');
-    return needs ? `"${out}"` : out;
+    return /[",\n]/.test(s) ? `"${out}"` : out;
   };
 
-  const lines = [header.join(",")].concat(
-    rows.map((r: any) =>
-      header
-        .map((k) =>
-          k === "raw_answers"
-            ? escapeCsv(r[k] ? JSON.stringify(r[k]) : "")
-            : escapeCsv(r[k])
-        )
-        .join(",")
-    )
-  );
+  const lines = [];
+  lines.push(header.join(","));
+
+  rows.forEach((r: any) => {
+    const base = {
+      id: r.id,
+      request_id: r.request_id,
+      email: r.email,
+      settore: r.settore,
+      sito_url: r.sito_url ?? "",
+      score: r.score,
+      livello: r.livello,
+      perdita_mensile: r.perdita_mensile,
+      created_at:
+        r.created_at instanceof Date
+          ? r.created_at.toISOString()
+          : r.created_at,
+    };
+
+    const row = header.map((k) => {
+      if (k in base) return escapeCsv(base[k as keyof typeof base]);
+      return escapeCsv(
+        r.raw_answers?.[k] ?? ""
+      );
+    });
+
+    lines.push(row.join(","));
+  });
 
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader("Content-Disposition", 'attachment; filename="bos-leads.csv"');
+  res.setHeader(
+    "Content-Disposition",
+    'attachment; filename="bos-leads.csv"'
+  );
   res.send(lines.join("\n"));
-});
-
-/**
- * ADMIN: DELETE lead by id
- */
-app.delete("/admin/leads/:id", async (req, res) => {
-  const forbidden = requireAdmin(req, res);
-  if (forbidden) return;
-
-  const id = Number(req.params.id);
-  if (!Number.isFinite(id)) {
-    return res.status(400).json({ ok: false, error: "Invalid id" });
-  }
-
-  const result = await pool.query(`DELETE FROM leads WHERE id = $1`, [id]);
-  return res.json({ ok: true, deleted: result.rowCount || 0 });
 });
 
 ensureDb()
