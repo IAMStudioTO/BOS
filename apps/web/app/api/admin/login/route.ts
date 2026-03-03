@@ -1,43 +1,28 @@
 import { NextResponse } from "next/server";
-
-const COOKIE_NAME = "bos_admin";
-const ONE_DAY = 60 * 60 * 24;
+import { setAdminSession } from "../_auth";
 
 export async function POST(req: Request) {
-  try {
-    const body = await req.json().catch(() => ({}));
-    const pass = String(body?.password || "");
-
-    const expected = (process.env.ADMIN_PASSWORD || "").trim();
-    if (!expected) {
-      return NextResponse.json(
-        { ok: false, error: "ADMIN_PASSWORD not configured" },
-        { status: 500 }
-      );
-    }
-
-    if (pass !== expected) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-    }
-
-    const res = NextResponse.json({ ok: true });
-
-    // Cookie di sessione (httpOnly)
-    res.cookies.set({
-      name: COOKIE_NAME,
-      value: "1",
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      path: "/",
-      maxAge: ONE_DAY,
-    });
-
-    return res;
-  } catch (e: any) {
+  const envPass = (process.env.ADMIN_PASSWORD || "").trim();
+  if (!envPass) {
     return NextResponse.json(
-      { ok: false, error: e?.message || "Server error" },
+      { ok: false, error: "ADMIN_PASSWORD not configured" },
       { status: 500 }
     );
   }
+
+  // Supporto: password da JSON oppure da header
+  let password = (req.headers.get("x-admin-pass") || "").trim();
+  if (!password) {
+    try {
+      const body = await req.json();
+      password = String(body?.password || "").trim();
+    } catch {}
+  }
+
+  if (!password || password !== envPass) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  await setAdminSession();
+  return NextResponse.json({ ok: true });
 }
