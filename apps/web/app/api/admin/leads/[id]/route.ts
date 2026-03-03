@@ -1,13 +1,20 @@
 import { NextResponse } from "next/server";
 import { isAdminAuthed } from "../../_auth";
 
-export async function DELETE(_req: Request, ctx: { params: { id: string } }) {
+export async function DELETE(
+  _req: Request,
+  context: { params: Promise<{ id: string }> }
+) {
   if (!isAdminAuthed()) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { ok: false, error: "Unauthorized" },
+      { status: 401 }
+    );
   }
 
-  const API_BASE_URL =
-    (process.env.API_BASE_URL || "https://bos-v6cz.onrender.com").replace(/\/$/, "");
+  const API_BASE_URL = (
+    process.env.API_BASE_URL || "https://bos-v6cz.onrender.com"
+  ).replace(/\/$/, "");
 
   const ADMIN_API_KEY = (process.env.ADMIN_API_KEY || "").trim();
   if (!ADMIN_API_KEY) {
@@ -17,7 +24,7 @@ export async function DELETE(_req: Request, ctx: { params: { id: string } }) {
     );
   }
 
-  const id = ctx.params.id;
+  const { id } = await context.params;
 
   const res = await fetch(`${API_BASE_URL}/admin/leads/${id}`, {
     method: "DELETE",
@@ -28,6 +35,7 @@ export async function DELETE(_req: Request, ctx: { params: { id: string } }) {
   });
 
   const text = await res.text();
+
   return new NextResponse(text, {
     status: res.status,
     headers: { "Content-Type": "application/json" },
