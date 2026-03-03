@@ -1,37 +1,15 @@
 import { NextResponse } from "next/server";
+import { isAdminAuthed } from "../_auth";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
-function isAuthorized(req: Request) {
-  const pass = (process.env.ADMIN_PASSWORD || "").trim();
-  const key = (process.env.ADMIN_API_KEY || "").trim();
-
-  const providedPass = (req.headers.get("x-admin-pass") || "").trim();
-  const providedKey = (req.headers.get("x-admin-key") || "").trim();
-
-  const passOk = pass && providedPass === pass;
-  const keyOk = key && providedKey === key;
-
-  return Boolean(passOk || keyOk);
-}
-
-function unauthorized() {
-  return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-}
-
-export async function GET(req: Request) {
-  if (!isAuthorized(req)) return unauthorized();
-
-  const API_BASE_URL = (process.env.API_BASE_URL || "").trim();
-  const ADMIN_API_KEY = (process.env.ADMIN_API_KEY || "").trim();
-
-  if (!API_BASE_URL) {
-    return NextResponse.json(
-      { ok: false, error: "API_BASE_URL not configured" },
-      { status: 500 }
-    );
+export async function GET() {
+  if (!isAdminAuthed()) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+
+  const API_BASE_URL =
+    (process.env.API_BASE_URL || "https://bos-v6cz.onrender.com").replace(/\/$/, "");
+
+  const ADMIN_API_KEY = (process.env.ADMIN_API_KEY || "").trim();
   if (!ADMIN_API_KEY) {
     return NextResponse.json(
       { ok: false, error: "ADMIN_API_KEY not configured" },
@@ -40,18 +18,15 @@ export async function GET(req: Request) {
   }
 
   const res = await fetch(`${API_BASE_URL}/admin/leads`, {
-    headers: { "x-admin-key": ADMIN_API_KEY },
+    headers: {
+      "x-admin-key": ADMIN_API_KEY,
+    },
     cache: "no-store",
   });
 
-  const data = await res.json();
-
-  return NextResponse.json(data, {
+  const text = await res.text();
+  return new NextResponse(text, {
     status: res.status,
-    headers: {
-      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-      Pragma: "no-cache",
-      Expires: "0",
-    },
+    headers: { "Content-Type": "application/json" },
   });
 }
