@@ -1,0 +1,17 @@
+name: Keep Render Warm
+
+on:
+  schedule:
+    # ogni 10 minuti
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping bos-api health
+        run: |
+          set -e
+          curl -sS -H "Cache-Control: no-cache" https://bos-v6cz.onrender.com/health > /dev/null
+          echo "OK: pinged /health"
